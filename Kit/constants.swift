@@ -58,6 +58,7 @@ public enum ModuleType: Int {
     case sensors
     case network
     case battery
+    case iOSBattery
     case bluetooth
     case clock
     
@@ -72,6 +73,7 @@ public enum ModuleType: Int {
         case .sensors: return "Sensors"
         case .network: return "Network"
         case .battery: return "Battery"
+        case .iOSBattery: return "iOS Battery"
         case .bluetooth: return "Bluetooth"
         case .clock: return "Clock"
         case .combined: return ""

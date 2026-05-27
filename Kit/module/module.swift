@@ -114,11 +114,14 @@ open class Module {
         settings: Settings_v? = nil,
         portal: Portal_p? = nil,
         notifications: NotificationsWrapper? = nil,
-        preview: PreviewWrapper? = nil
+        preview: PreviewWrapper? = nil,
+        configName: String = "config",
+        configBundle: Bundle? = nil
     ) {
         self.moduleType = moduleType
         self.portal = portal
-        self.config = module_c(in: Bundle(for: type(of: self)).path(forResource: "config", ofType: "plist")!)
+        let bundle = configBundle ?? Bundle(for: type(of: self))
+        self.config = module_c(in: bundle.path(forResource: configName, ofType: "plist")!)
         
         self.log = NextLog.shared.copy(category: self.config.name)
         self.settingsView = settings

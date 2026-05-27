@@ -20,6 +20,7 @@ import Sensors
 import GPU
 import Bluetooth
 import Clock
+// iOSBattery module is built into the app target (pymobiledevice3 via Python)
 
 let updater = Updater(github: "exelban/stats", url: "https://api.mac-stats.com/release/latest")
 var modules: [Module] = [
@@ -30,6 +31,7 @@ var modules: [Module] = [
     Sensors(),
     Network(),
     Battery(),
+    iOSBattery(),
     Bluetooth(),
     Clock()
 ]
