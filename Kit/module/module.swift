@@ -95,6 +95,7 @@ open class Module {
     private var moduleType: ModuleType
     
     private var settingsView: Settings_v? = nil
+    private var extraSettingsViews: [(title: String, view: Settings_v)] = []
     private var popup: PopupWindow? = nil
     private var popupView: Popup_p? = nil
     private var notificationsView: NotificationsWrapper? = nil
@@ -116,15 +117,17 @@ open class Module {
         notifications: NotificationsWrapper? = nil,
         preview: PreviewWrapper? = nil,
         configName: String = "config",
-        configBundle: Bundle? = nil
+        configBundle: Bundle? = nil,
+        extraSettings: [(title: String, view: Settings_v)] = []
     ) {
         self.moduleType = moduleType
         self.portal = portal
         let bundle = configBundle ?? Bundle(for: type(of: self))
         self.config = module_c(in: bundle.path(forResource: configName, ofType: "plist")!)
-        
+
         self.log = NextLog.shared.copy(category: self.config.name)
         self.settingsView = settings
+        self.extraSettingsViews = extraSettings
         self.popupView = popup
         self.notificationsView = notifications
         self.previewView = preview
@@ -166,7 +169,8 @@ open class Module {
             modulePreview: self.previewView,
             moduleSettings: self.settingsView,
             popupSettings: self.popupView,
-            notificationsSettings: self.notificationsView
+            notificationsSettings: self.notificationsView,
+            extraSettings: self.extraSettingsViews
         )
         
         self.popup = PopupWindow(title: self.config.name, module: self.moduleType, view: self.popupView, visibilityCallback: self.popupVisibilityCallback)

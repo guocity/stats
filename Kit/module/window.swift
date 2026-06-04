@@ -42,6 +42,7 @@ open class Window: NSStackView {
     
     private var modulePreview: PreviewWrapper?
     private var moduleSettings: Settings_v?
+    private var extraSettings: [(title: String, view: Settings_v)] = []
     private var popupSettings: Popup_p?
     private var notificationsSettings: NotificationsWrapper?
     
@@ -78,12 +79,14 @@ open class Window: NSStackView {
         modulePreview: PreviewWrapper?,
         moduleSettings: Settings_v?,
         popupSettings: Popup_p?,
-        notificationsSettings: NotificationsWrapper?
+        notificationsSettings: NotificationsWrapper?,
+        extraSettings: [(title: String, view: Settings_v)] = []
     ) {
         self.config = config
         self.widgets = widgets.pointee
         self.modulePreview = modulePreview
         self.moduleSettings = moduleSettings
+        self.extraSettings = extraSettings
         self.popupSettings = popupSettings
         self.notificationsSettings = notificationsSettings
         
@@ -164,7 +167,10 @@ open class Window: NSStackView {
         if self.isNotificationsSettingsAvailable {
             labels.append(localizedString("Notifications"))
         }
-        
+        for extra in self.extraSettings {
+            labels.append(extra.title)
+        }
+
         let segmentedControl = NSSegmentedControl(labels: labels, trackingMode: .selectOne, target: self, action: #selector(self.switchTabs))
         segmentedControl.segmentDistribution = .fillEqually
         segmentedControl.selectSegment(withTag: 0)
@@ -227,7 +233,20 @@ open class Window: NSStackView {
             }()
             tabView.addTabViewItem(notificationsTab)
         }
-        
+
+        for extra in self.extraSettings {
+            let item: NSTabViewItem = NSTabViewItem()
+            item.label = extra.title
+            item.view = {
+                let view = ScrollableStackView(frame: tabView.frame)
+                view.stackView.spacing = Constants.Settings.margin
+                view.stackView.addArrangedSubview(extra.view)
+                extra.view.load(widgets: self.widgets.filter { $0.isActive }.map { $0.type })
+                return view
+            }()
+            tabView.addTabViewItem(item)
+        }
+
         let widgetSelector = WidgetSelectorView(module: self.config.pointee.name, widgets: self.widgets, stateCallback: self.loadWidget)
         
         view.addArrangedSubview(widgetSelector)

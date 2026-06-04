@@ -67,7 +67,7 @@ internal final class iOSBatteryReader: Reader<iOSBattery_Usage> {
 
 // MARK: - pymobiledevice3
 
-private enum IOBatteryPy {
+internal enum IOBatteryPy {
     private static let pythons = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
     private static var cachedPython: String?
 
@@ -126,9 +126,9 @@ private enum IOBatteryPy {
             paths.append(override)
         }
         paths.append(contentsOf: pythons)
-        if let data = shell("which -a python3 2>/dev/null", requireOutput: false),
-           let text = String(data: data, encoding: .utf8) {
-            paths.append(contentsOf: text.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) })
+        let which = run("/usr/bin/which", ["-a", "python3"], timeout: 10)
+        if which.status == 0 {
+            paths.append(contentsOf: which.output.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) })
         }
         let home = NSHomeDirectory()
         for name in [".venv", ".venv-3.13", "venv", ".local/pipx/venvs/pymobiledevice3/bin/python3"] {
@@ -144,7 +144,7 @@ private enum IOBatteryPy {
     }
 
     private static func canImportPymobiledevice3(_ python: String) -> Bool {
-        shell("\(q(python)) -c 'import pymobiledevice3'", requireOutput: false) != nil
+        run(python, ["-c", "import pymobiledevice3"], timeout: 20).status == 0
     }
 
     private static var script: String? {
@@ -158,14 +158,16 @@ private enum IOBatteryPy {
 
     private static func runJSON(_ args: [String]) -> [String: Any]? {
         guard let sc = script else { return nil }
-        let cmd: String
+        let result: (status: Int32, output: String)
         if let py = resolvedPython() {
-            cmd = "\(q(py)) \(q(sc)) \(args.map(q).joined(separator: " "))"
+            result = run(py, [sc] + args, timeout: 90)
         } else {
-            cmd = "\(q(sc)) \(args.map(q).joined(separator: " "))"
+            // No interpreter has pymobiledevice3 — run any python3 so the script's own
+            // ImportError handler can report "not installed" as JSON (it exits 0).
+            result = run("/usr/bin/env", ["python3", sc] + args, timeout: 90)
         }
-        guard let data = shell(cmd),
-              !data.isEmpty,
+        guard result.status == 0,
+              let data = result.output.data(using: .utf8), !data.isEmpty,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         return json
@@ -265,30 +267,242 @@ private enum IOBatteryPy {
         }
     }
 
-    private static func shell(_ cmd: String, requireOutput: Bool = true) -> Data? {
+    // MARK: - Process runner (direct exec, drained concurrently, timed out)
+
+    /// Launches `exe` directly (no shell), draining output as it arrives so the pipe
+    /// buffer can't fill, and terminating the process if it exceeds `timeout`.
+    @discardableResult
+    private static func run(_ exe: String, _ args: [String], timeout: TimeInterval = 30, mergeStderr: Bool = false, onOutput: ((String) -> Void)? = nil) -> (status: Int32, output: String) {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/bash")
-        p.arguments = ["-lc", cmd]
+        p.executableURL = URL(fileURLWithPath: exe)
+        p.arguments = args
+
         var env = ProcessInfo.processInfo.environment
-        let brew = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin"
         let home = NSHomeDirectory()
-        let venvBin = (home as NSString).appendingPathComponent(".venv-3.13/bin")
-        let pathEnv = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        env["PATH"] = [venvBin, brew, pathEnv].joined(separator: ":")
-        env["HOME"] = (env["HOME"]?.isEmpty == false) ? env["HOME"] : home
+        let brew = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin"
+        env["PATH"] = [brew, env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"].joined(separator: ":")
+        if env["HOME"]?.isEmpty ?? true { env["HOME"] = home }
         p.environment = env
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return nil }
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        if requireOutput, data.isEmpty { return nil }
-        return data
+
+        let outPipe = Pipe()
+        p.standardOutput = outPipe
+        p.standardError = mergeStderr ? outPipe : FileHandle.nullDevice
+
+        let collected = NSMutableData()
+        let lock = NSLock()
+        let handle = outPipe.fileHandleForReading
+        handle.readabilityHandler = { h in
+            let chunk = h.availableData
+            guard !chunk.isEmpty else { return }
+            lock.lock(); collected.append(chunk); lock.unlock()
+            if let onOutput, let s = String(data: chunk, encoding: .utf8) { onOutput(s) }
+        }
+
+        let sema = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in sema.signal() }
+        do {
+            try p.run()
+        } catch {
+            handle.readabilityHandler = nil
+            return (-1, "Failed to launch \(exe): \(error.localizedDescription)")
+        }
+
+        if sema.wait(timeout: .now() + timeout) == .timedOut {
+            p.terminate()
+            _ = sema.wait(timeout: .now() + 3)
+        }
+        handle.readabilityHandler = nil
+        let rest = handle.readDataToEndOfFile()
+        if !rest.isEmpty {
+            lock.lock(); collected.append(rest); lock.unlock()
+            if let onOutput, let s = String(data: rest, encoding: .utf8) { onOutput(s) }
+        }
+        lock.lock(); let data = collected as Data; lock.unlock()
+        return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
     }
 
-    private static func q(_ s: String) -> String { "'\(s.replacingOccurrences(of: "'", with: "'\\''"))'" }
+    // MARK: - Version probes
+
+    private static func pythonVersion(_ python: String) -> String? {
+        let r = run(python, ["-c", "import sys;print('.'.join(map(str, sys.version_info[:3])))"], timeout: 10)
+        let v = r.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (r.status == 0 && !v.isEmpty) ? v : nil
+    }
+
+    private static func isPython39OrNewer(_ python: String) -> Bool {
+        guard let v = pythonVersion(python) else { return false }
+        let parts = v.split(separator: ".").compactMap { Int($0) }
+        guard parts.count >= 2 else { return false }
+        return parts[0] > 3 || (parts[0] == 3 && parts[1] >= 9)
+    }
+
+    static func moduleVersion(_ python: String) -> String? {
+        let r = run(python, ["-c", "import importlib.metadata as m; print(m.version('pymobiledevice3'))"], timeout: 20)
+        let v = r.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (r.status == 0 && !v.isEmpty && !v.lowercased().contains("error") && !v.contains("Traceback")) ? v : nil
+    }
+
+    // MARK: - Managed environment (private venv in Application Support)
+
+    static let activePythonKey = "iOSBatteryPythonPath"
+
+    static var managedVenvDir: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("Stats/ios-bridge-venv", isDirectory: true)
+    }
+    static var managedVenvPython: String { managedVenvDir.appendingPathComponent("bin/python3").path }
+    static var hasManagedVenv: Bool { FileManager.default.isExecutableFile(atPath: managedVenvPython) }
+
+    static var activePythonOverride: String? {
+        let v = UserDefaults.standard.string(forKey: activePythonKey)
+        return (v?.isEmpty == false) ? v : nil
+    }
+    static func setActivePython(_ path: String) {
+        UserDefaults.standard.set(path, forKey: activePythonKey)
+        cachedPython = nil
+    }
+    static func clearActivePython() {
+        UserDefaults.standard.removeObject(forKey: activePythonKey)
+        cachedPython = nil
+    }
+
+    // MARK: - Environment discovery / status
+
+    struct DetectedPython {
+        let path: String
+        let version: String?
+        let hasModule: Bool
+        let isManaged: Bool
+        let isActive: Bool
+    }
+    struct EnvironmentStatus {
+        let active: DetectedPython?
+        let moduleVersion: String?
+        let hasManaged: Bool
+        let detected: [DetectedPython]
+    }
+
+    /// Probes every discovered interpreter (one subprocess each). Call off the main thread.
+    static func environmentStatus() -> EnvironmentStatus {
+        let activePath = resolvedPython()
+        var detected: [DetectedPython] = []
+        for path in discoverPythonPaths() {
+            detected.append(DetectedPython(
+                path: path,
+                version: pythonVersion(path),
+                hasModule: canImportPymobiledevice3(path),
+                isManaged: path == managedVenvPython,
+                isActive: path == activePath
+            ))
+        }
+        let active = activePath.map {
+            DetectedPython(path: $0, version: pythonVersion($0), hasModule: true, isManaged: $0 == managedVenvPython, isActive: true)
+        }
+        return EnvironmentStatus(
+            active: active,
+            moduleVersion: activePath.flatMap { moduleVersion($0) },
+            hasManaged: hasManagedVenv,
+            detected: detected
+        )
+    }
+
+    // MARK: - Install / uninstall
+
+    enum InstallTarget {
+        case managed
+        case interpreter(String)
+    }
+
+    /// Callbacks fire on a background queue — hop to the main queue before touching UI.
+    static func install(into target: InstallTarget, onProgress: @escaping (String) -> Void, completion: @escaping (Bool, String) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            switch target {
+            case .managed: installManaged(onProgress: onProgress, completion: completion)
+            case .interpreter(let path): installInto(path, onProgress: onProgress, completion: completion)
+            }
+        }
+    }
+
+    private static func installManaged(onProgress: @escaping (String) -> Void, completion: @escaping (Bool, String) -> Void) {
+        let bases = discoverPythonPaths().filter { $0 != managedVenvPython && isPython39OrNewer($0) }
+        guard !bases.isEmpty else {
+            completion(false, "No Python 3.9+ was found to build the environment. Install Python 3 (e.g. `brew install python`) and try again.")
+            return
+        }
+
+        let dir = managedVenvDir
+        var built = false
+        var lastOut = ""
+        for base in bases {
+            onProgress("Creating environment with \(base)…\n")
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.createDirectory(at: dir.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let venv = run(base, ["-m", "venv", dir.path], timeout: 120, mergeStderr: true, onOutput: onProgress)
+            if venv.status == 0 && hasManagedVenv { built = true; break }
+            lastOut = venv.output
+        }
+        guard built else {
+            completion(false, "Could not create a virtual environment.\n\(lastOut)")
+            return
+        }
+
+        let py = managedVenvPython
+        onProgress("Upgrading pip…\n")
+        _ = run(py, ["-m", "pip", "install", "--upgrade", "pip"], timeout: 240, mergeStderr: true, onOutput: onProgress)
+        onProgress("Installing pymobiledevice3 (this can take a minute)…\n")
+        let pip = run(py, ["-m", "pip", "install", "pymobiledevice3>=4"], timeout: 600, mergeStderr: true, onOutput: onProgress)
+        guard pip.status == 0, canImportPymobiledevice3(py) else {
+            completion(false, "pip install failed (exit \(pip.status)). See the log above.")
+            return
+        }
+        setActivePython(py)
+        completion(true, "Installed pymobiledevice3 \(moduleVersion(py) ?? "") into the managed environment.")
+    }
+
+    private static func installInto(_ python: String, onProgress: @escaping (String) -> Void, completion: @escaping (Bool, String) -> Void) {
+        onProgress("Installing into \(python)…\n")
+        var r = run(python, ["-m", "pip", "install", "pymobiledevice3>=4"], timeout: 600, mergeStderr: true, onOutput: onProgress)
+        if r.status != 0 && r.output.lowercased().contains("externally-managed") {
+            onProgress("\nEnvironment is externally managed; retrying with --break-system-packages…\n")
+            r = run(python, ["-m", "pip", "install", "--break-system-packages", "pymobiledevice3>=4"], timeout: 600, mergeStderr: true, onOutput: onProgress)
+        }
+        guard r.status == 0, canImportPymobiledevice3(python) else {
+            completion(false, "Install failed (exit \(r.status)). See the log above. (System Python may need sudo or a virtual environment — try the managed install instead.)")
+            return
+        }
+        setActivePython(python)
+        completion(true, "Installed pymobiledevice3 \(moduleVersion(python) ?? "") into \(python).")
+    }
+
+    static func uninstall(from target: InstallTarget) -> (Bool, String) {
+        switch target {
+        case .managed:
+            return removeManagedInstall()
+        case .interpreter(let python):
+            _ = run(python, ["-m", "pip", "uninstall", "-y", "pymobiledevice3"], timeout: 240, mergeStderr: true)
+            if activePythonOverride == python { clearActivePython() }
+            cachedPython = nil
+            let stillThere = canImportPymobiledevice3(python)
+            return (!stillThere, stillThere ? "Uninstall may have failed for \(python)." : "Removed pymobiledevice3 from \(python).")
+        }
+    }
+
+    /// Deletes the managed venv (never touches the user's own interpreters).
+    private static func removeManagedInstall() -> (Bool, String) {
+        let dir = managedVenvDir
+        guard FileManager.default.fileExists(atPath: dir.path) else {
+            return (false, "There is no managed environment to remove.")
+        }
+        if activePythonOverride == managedVenvPython { clearActivePython() }
+        do {
+            try FileManager.default.removeItem(at: dir)
+            cachedPython = nil
+            return (true, "Removed the managed environment.")
+        } catch {
+            return (false, "Could not remove environment: \(error.localizedDescription)")
+        }
+    }
 }
 
 // MARK: - Local Network (Wi‑Fi device discovery from GUI apps)

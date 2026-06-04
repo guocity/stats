@@ -232,7 +232,7 @@ internal final class iOSBatterySettings: NSStackView, Settings_v {
     public var refreshNow: (() -> Void) = { }
     /// Called from `load(widgets:)` to pull the reader's latest cached value.
     public var syncFromReader: (() -> iOSBattery_Usage?)? = nil
-    
+
     public init(_ module: ModuleType) {
         self.module = module
         self.updateIntervalValue = Store.shared.int(key: "\(module.stringValue)_updateInterval", defaultValue: self.updateIntervalValue)
@@ -272,7 +272,7 @@ internal final class iOSBatterySettings: NSStackView, Settings_v {
     
     private func rebuild() {
         self.subviews.forEach { $0.removeFromSuperview() }
-        
+
         self.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Update interval"), component: self.intervalAndRefreshRow())
         ]))
@@ -386,18 +386,278 @@ internal final class iOSBatterySettings: NSStackView, Settings_v {
     }
 }
 
+// MARK: - Python management (top-level "Python" tab)
+
+internal final class iOSBatteryPythonSettings: NSStackView, Settings_v {
+    /// Set by the module to trigger a fresh reader read after install / switch.
+    public var refreshNow: (() -> Void) = { }
+
+    private var pythonStatus: IOBatteryPy.EnvironmentStatus?
+    private var pythonBusy: Bool = false
+    private var pythonLog: String = ""
+    private weak var pythonLogField: ValueField?
+
+    public init(_ module: ModuleType) {
+        super.init(frame: .zero)
+        self.orientation = .vertical
+        self.spacing = Constants.Settings.margin
+        self.alignment = .width
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    public func load(widgets: [widget_t]) {
+        if self.pythonStatus == nil && !self.pythonBusy {
+            self.scanPython()
+        } else {
+            self.rebuildOnMain()
+        }
+    }
+
+    private func rebuildOnMain() {
+        if Thread.isMainThread {
+            self.rebuild()
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.rebuild() }
+        }
+    }
+
+    private func rebuild() {
+        self.subviews.forEach { $0.removeFromSuperview() }
+        self.buildPythonTab()
+    }
+
+    private func valueMultiline(_ text: String) -> NSView {
+        let v = ValueField(frame: .zero, text)
+        v.cell?.usesSingleLineMode = false
+        v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return v
+    }
+
+    private func buildPythonTab() {
+        // Status
+        var statusRows: [PreferencesRow] = []
+        if let s = self.pythonStatus {
+            let stateText: String
+            if let v = s.moduleVersion {
+                stateText = "\(localizedString("Installed")) (pymobiledevice3 \(v))"
+            } else {
+                stateText = localizedString("Not installed")
+            }
+            statusRows.append(PreferencesRow("pymobiledevice3", component: ValueField(frame: .zero, stateText)))
+            let active = s.active.map { d in d.path + (d.version.map { " (Python \($0))" } ?? "") } ?? "—"
+            statusRows.append(PreferencesRow(localizedString("Active Python"), component: self.valueMultiline(active)))
+        } else {
+            statusRows.append(PreferencesRow(localizedString("Status"), component: ValueField(frame: .zero, localizedString("Scanning…"))))
+        }
+        self.addArrangedSubview(PreferencesSection(statusRows))
+
+        // Managed install / uninstall
+        self.addArrangedSubview(PreferencesSection(title: localizedString("Managed environment"), [
+            PreferencesRow(
+                localizedString("Private install"),
+                localizedString("Isolated env; system Python untouched."),
+                component: self.managedActionsRow()
+            )
+        ]))
+
+        // Detected interpreters — install into / use / remove on any Python on this Mac.
+        if let s = self.pythonStatus, !s.detected.isEmpty {
+            let rows = s.detected.map { self.detectedRow($0) }
+            self.addArrangedSubview(PreferencesSection(title: localizedString("Detected Python environments"), rows))
+        }
+        self.addArrangedSubview(PreferencesSection([
+            PreferencesRow(localizedString("Detection"), component: {
+                let b = self.buttonView(#selector(self.rescanClicked(_:)), text: localizedString("Rescan"))
+                b.isEnabled = !self.pythonBusy
+                return b
+            }())
+        ]))
+
+        // Log
+        if self.pythonBusy || !self.pythonLog.isEmpty {
+            self.addArrangedSubview(PreferencesSection(title: localizedString("Log"), [
+                PreferencesRow(component: self.logComponent())
+            ]))
+        }
+    }
+
+    private func managedActionsRow() -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.alignment = .centerY
+
+        let installed = self.pythonStatus?.hasManaged ?? IOBatteryPy.hasManagedVenv
+        let install = self.buttonView(#selector(self.installManagedClicked(_:)), text: installed ? localizedString("Reinstall") : localizedString("Install"))
+        install.isEnabled = !self.pythonBusy
+        install.setContentHuggingPriority(.required, for: .horizontal)
+        row.addArrangedSubview(install)
+
+        if installed {
+            let remove = self.buttonView(#selector(self.uninstallManagedClicked(_:)), text: localizedString("Uninstall"))
+            remove.isEnabled = !self.pythonBusy
+            remove.setContentHuggingPriority(.required, for: .horizontal)
+            row.addArrangedSubview(remove)
+        }
+
+        if self.pythonBusy {
+            let spinner = NSProgressIndicator()
+            spinner.style = .spinning
+            spinner.controlSize = .small
+            spinner.isIndeterminate = true
+            spinner.startAnimation(nil)
+            row.addArrangedSubview(spinner)
+        }
+        return row
+    }
+
+    private func detectedRow(_ env: IOBatteryPy.DetectedPython) -> PreferencesRow {
+        let right = NSStackView()
+        right.orientation = .horizontal
+        right.spacing = 8
+        right.alignment = .centerY
+
+        right.addArrangedSubview(ValueField(frame: .zero, env.hasModule ? localizedString("pymobiledevice3 ✓") : "—"))
+        if env.hasModule {
+            if env.isActive {
+                right.addArrangedSubview(ValueField(frame: .zero, localizedString("Active")))
+            } else {
+                let use = self.buttonView(#selector(self.useEnvClicked(_:)), text: localizedString("Use"))
+                use.identifier = NSUserInterfaceItemIdentifier(env.path)
+                use.isEnabled = !self.pythonBusy
+                use.setContentHuggingPriority(.required, for: .horizontal)
+                right.addArrangedSubview(use)
+            }
+            if !env.isManaged {
+                let remove = self.buttonView(#selector(self.removeEnvClicked(_:)), text: localizedString("Remove"))
+                remove.identifier = NSUserInterfaceItemIdentifier(env.path)
+                remove.isEnabled = !self.pythonBusy
+                remove.setContentHuggingPriority(.required, for: .horizontal)
+                right.addArrangedSubview(remove)
+            }
+        } else {
+            let install = self.buttonView(#selector(self.installHereClicked(_:)), text: localizedString("Install here"))
+            install.identifier = NSUserInterfaceItemIdentifier(env.path)
+            install.isEnabled = !self.pythonBusy
+            install.setContentHuggingPriority(.required, for: .horizontal)
+            right.addArrangedSubview(install)
+        }
+
+        let title = env.version.map { "Python \($0)" } ?? "Python"
+        return PreferencesRow(title, env.path, component: right)
+    }
+
+    private func logComponent() -> NSView {
+        let v = ValueField(frame: .zero, self.pythonLog.isEmpty ? localizedString("Working…") : self.pythonLog)
+        v.cell?.usesSingleLineMode = false
+        v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        self.pythonLogField = v
+        return v
+    }
+
+    private func appendLog(_ chunk: String) {
+        self.pythonLog += chunk
+        if self.pythonLog.count > 8000 {
+            self.pythonLog = String(self.pythonLog.suffix(8000))
+        }
+        self.pythonLogField?.stringValue = self.pythonLog
+    }
+
+    private func scanPython() {
+        self.pythonBusy = true
+        self.rebuild()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let status = IOBatteryPy.environmentStatus()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pythonStatus = status
+                self.pythonBusy = false
+                self.rebuild()
+            }
+        }
+    }
+
+    private func startInstall(_ target: IOBatteryPy.InstallTarget) {
+        guard !self.pythonBusy else { return }
+        self.pythonBusy = true
+        self.pythonLog = ""
+        self.rebuild()
+        IOBatteryPy.install(into: target, onProgress: { [weak self] chunk in
+            DispatchQueue.main.async { self?.appendLog(chunk) }
+        }, completion: { [weak self] ok, message in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.appendLog("\n" + message + "\n")
+                self.pythonBusy = false
+                self.scanPython()
+                if ok { self.refreshNow() }
+            }
+        })
+    }
+
+    private func startUninstall(_ target: IOBatteryPy.InstallTarget) {
+        guard !self.pythonBusy else { return }
+        self.pythonBusy = true
+        self.rebuild()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let (_, message) = IOBatteryPy.uninstall(from: target)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pythonLog = message
+                self.pythonBusy = false
+                self.scanPython()
+            }
+        }
+    }
+
+    @objc private func rescanClicked(_ sender: NSButton) {
+        guard !self.pythonBusy else { return }
+        self.scanPython()
+    }
+
+    @objc private func installManagedClicked(_ sender: NSButton) {
+        self.startInstall(.managed)
+    }
+
+    @objc private func uninstallManagedClicked(_ sender: NSButton) {
+        self.startUninstall(.managed)
+    }
+
+    @objc private func installHereClicked(_ sender: NSButton) {
+        guard let path = sender.identifier?.rawValue, !path.isEmpty else { return }
+        self.startInstall(.interpreter(path))
+    }
+
+    @objc private func removeEnvClicked(_ sender: NSButton) {
+        guard let path = sender.identifier?.rawValue, !path.isEmpty else { return }
+        self.startUninstall(.interpreter(path))
+    }
+
+    @objc private func useEnvClicked(_ sender: NSButton) {
+        guard !self.pythonBusy, let path = sender.identifier?.rawValue, !path.isEmpty else { return }
+        IOBatteryPy.setActivePython(path)
+        self.scanPython()
+        self.refreshNow()
+    }
+}
+
 public final class iOSBattery: Module {
     private let popupView: iOSBatteryPopup
     private let portalView: iOSBatteryPortal
     private let settingsContent: iOSBatterySettings
-    
+    private let pythonSettingsContent: iOSBatteryPythonSettings
+
     private var usageReader: iOSBatteryReader? = nil
-    
+
     public init() {
         self.popupView = iOSBatteryPopup(.iOSBattery)
         self.portalView = iOSBatteryPortal(.iOSBattery)
         self.settingsContent = iOSBatterySettings(.iOSBattery)
-        
+        self.pythonSettingsContent = iOSBatteryPythonSettings(.iOSBattery)
+
         super.init(
             moduleType: .iOSBattery,
             popup: self.popupView,
@@ -406,9 +666,10 @@ public final class iOSBattery: Module {
             notifications: nil,
             preview: nil,
             configName: "iOSBattery.config",
-            configBundle: Bundle.main
+            configBundle: Bundle.main,
+            extraSettings: [(localizedString("Python"), self.pythonSettingsContent)]
         )
-        
+
         self.settingsContent.setInterval = { [weak self] value in
             self?.usageReader?.setInterval(value)
         }
@@ -420,6 +681,12 @@ public final class iOSBattery: Module {
         }
         self.settingsContent.syncFromReader = { [weak self] in
             self?.usageReader?.value
+        }
+        self.pythonSettingsContent.refreshNow = { [weak self] in
+            guard let reader = self?.usageReader else { return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                reader.read()
+            }
         }
         
         self.usageReader = iOSBatteryReader(.iOSBattery) { [weak self] value in
