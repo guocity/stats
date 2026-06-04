@@ -163,7 +163,7 @@ public class LineChart: WidgetWrapper {
         var color: NSColor = .controlAccentColor
         switch self.colorState {
         case .systemAccent: color = .controlAccentColor
-        case .utilization: color = value.usageColor()
+        case .utilization: color = value.usageColor(zones: self.title == "AI Tokens" ? (0.2, 0.4) : (0.6, 0.8), reversed: self.title == "Battery" || self.title == "AI Tokens")
         case .pressure: color = pressureLevel.pressureColor()
         case .monochrome:
             if self.boxState {

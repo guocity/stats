@@ -44,7 +44,9 @@ internal final class AITokensPopup: PopupWrapper {
             $0.removeFromSuperview()
         }
 
-        let providers = value.providers.filter { !$0.windows.isEmpty }
+        let providers = value.providers.filter { provider in
+            provider.enabled && provider.windows.contains(where: { !$0.isStale })
+        }
         guard !providers.isEmpty else {
             let message = value.statusMessage ?? localizedString("No usage history found")
             self.stack.addArrangedSubview(self.emptyState(message))
@@ -55,7 +57,7 @@ internal final class AITokensPopup: PopupWrapper {
         let now = Date()
         for provider in providers {
             self.stack.addArrangedSubview(separatorView(provider.name, width: self.contentWidth))
-            for (index, window) in provider.windows.enumerated() {
+            for (index, window) in provider.windows.enumerated() where !window.isStale {
                 guard let latest = window.latest else { continue }
                 let remainingFraction: Double
                 let countdownColor: NSColor

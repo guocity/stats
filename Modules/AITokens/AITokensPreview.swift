@@ -43,8 +43,8 @@ internal final class AITokensPreview: PreviewWrapper {
     internal func usageCallback(_ value: AITokens_Usage) {
         DispatchQueue.main.async {
             // Rebuild the static sections only when the set of provider/window rows changes.
-            let signature = value.providers.map { p in
-                "\(p.id):" + p.windows.map { $0.name }.joined(separator: ",")
+            let signature = value.providers.filter { $0.enabled }.map { p in
+                "\(p.id):" + p.windows.filter { !$0.isStale }.map { $0.name }.joined(separator: ",")
             }.joined(separator: "|") + (value.hasData ? "" : "·empty")
             if signature != self.signature {
                 self.rebuild(value)
@@ -59,8 +59,8 @@ internal final class AITokensPreview: PreviewWrapper {
     private func rebuild(_ value: AITokens_Usage) {
         self.subviews.forEach { $0.removeFromSuperview() }
         self.summaryPanels.removeAll()
-        self.signature = value.providers.map { p in
-            "\(p.id):" + p.windows.map { $0.name }.joined(separator: ",")
+        self.signature = value.providers.filter { $0.enabled }.map { p in
+            "\(p.id):" + p.windows.filter { !$0.isStale }.map { $0.name }.joined(separator: ",")
         }.joined(separator: "|") + (value.hasData ? "" : "·empty")
 
         guard value.hasData else {
@@ -77,7 +77,7 @@ internal final class AITokensPreview: PreviewWrapper {
             self.chartContainer(self.usageChart)
         ]))
 
-        for provider in value.providers where !provider.windows.isEmpty {
+        for provider in value.providers where provider.enabled && provider.windows.contains(where: { !$0.isStale }) {
             let panel = AITokensSummaryPanel(provider: provider)
             self.summaryPanels[provider.id] = panel
             self.addArrangedSubview(panel.section)
@@ -91,9 +91,9 @@ internal final class AITokensPreview: PreviewWrapper {
         self.lastUsage = value
         let now = Date()
         var series: [AITokensMultiLineChart.Series] = []
-        for provider in value.providers {
+        for provider in value.providers where provider.enabled {
             self.summaryPanels[provider.id]?.update(provider, now: now)
-            for (index, window) in provider.windows.enumerated() {
+            for (index, window) in provider.windows.enumerated() where !window.isStale {
                 let points: [DoubleValue] = window.entries.map {
                     var dv = DoubleValue($0.usedPercent)
                     dv.ts = $0.capturedAt
@@ -105,7 +105,8 @@ internal final class AITokensPreview: PreviewWrapper {
                     color: provider.color(forWindowIndex: index),
                     points: points,
                     upcomingReset: aiTokensUpcomingReset(window, from: now),
-                    windowMinutes: window.windowMinutes
+                    windowMinutes: window.windowMinutes,
+                    windowName: window.name
                 ))
             }
         }
@@ -201,7 +202,7 @@ private final class AITokensSummaryPanel {
         )
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        for (index, window) in provider.windows.enumerated() {
+        for (index, window) in provider.windows.enumerated() where !window.isStale {
             let color = provider.color(forWindowIndex: index)
             let row = NSStackView()
             row.orientation = .horizontal
@@ -242,7 +243,7 @@ private final class AITokensSummaryPanel {
     }
 
     func update(_ provider: AITokens_Provider, now: Date) {
-        for window in provider.windows {
+        for window in provider.windows where !window.isStale {
             guard let fields = self.windowFields[window.name], let latest = window.latest else { continue }
             fields.used.stringValue = "\(Int(latest.usedPercent.rounded()))%"
             if let upcoming = aiTokensUpcomingReset(window, from: now) {
@@ -266,6 +267,7 @@ private final class AITokensMultiLineChart: NSView {
         let upcomingReset: Date?
         /// Window length — longer windows (weekly/monthly) get more widely-spaced reset dots.
         let windowMinutes: Int
+        let windowName: String
     }
 
     /// A projected sample, cached each draw so hover can hit-test against on-screen points.
@@ -512,7 +514,8 @@ private final class AITokensMultiLineChart: NSView {
             for p in pts.dropFirst() {
                 path.line(to: CGPoint(x: xFor(p.ts.timeIntervalSince1970), y: yFor(p.value)))
             }
-            path.lineWidth = max(hairline, 1)
+            let isSession = s.windowName.lowercased().contains("session") || s.windowMinutes < 1440
+            path.lineWidth = isSession ? hairline : max(hairline, 1)
             path.lineJoinStyle = .round
             path.stroke()
         }

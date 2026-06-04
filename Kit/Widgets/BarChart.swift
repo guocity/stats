@@ -190,7 +190,7 @@ public class BarChart: WidgetWrapper {
                 if partitionValue.color == nil {
                     switch self.colorState {
                     case .systemAccent: NSColor.controlAccentColor.set()
-                    case .utilization: partitionValue.value.usageColor(zones: colorZones, reversed: self.title == "Battery").set()
+                    case .utilization: partitionValue.value.usageColor(zones: colorZones, reversed: self.title == "Battery" || self.title == "AI Tokens").set()
                     case .pressure: pressureLevel.pressureColor().set()
                     case .monochrome:
                         if self.boxState {

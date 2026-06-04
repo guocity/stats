@@ -69,6 +69,8 @@ struct AITokens_Provider: Codable {
     var colorSeed: String = ""
     /// Index of this account within its file (0 = preferred) — used to vary the hue between accounts.
     var accountIndex: Int = 0
+    /// Whether the user has enabled this account in settings.
+    var enabled: Bool = true
 
     /// The window closest to its limit — the one most worth surfacing first.
     var mostUsedWindow: AITokens_Window? {
@@ -104,14 +106,14 @@ struct AITokens_Usage: Codable {
         self.statusMessage = statusMessage
     }
 
-    var hasData: Bool { providers.contains { !$0.windows.isEmpty } }
+    var hasData: Bool { providers.contains { $0.enabled && $0.windows.contains { !$0.isStale } } }
 
     /// Provider+window carrying the highest current usage across everything.
     var primaryWindow: (provider: AITokens_Provider, window: AITokens_Window)? {
         var best: (AITokens_Provider, AITokens_Window)?
         var bestPercent = -1.0
-        for p in providers {
-            for w in p.windows {
+        for p in providers where p.enabled {
+            for w in p.windows where !w.isStale {
                 let pct = w.latest?.usedPercent ?? -1
                 if pct > bestPercent { bestPercent = pct; best = (p, w) }
             }
@@ -203,8 +205,8 @@ struct AITokensHistoricalReset {
 /// any reset that stayed anchored across captures (or differs from capturedAt + window) is kept.
 func aiTokensHistoricalResets(_ providers: [AITokens_Provider], before now: Date) -> [AITokensHistoricalReset] {
     var out: [AITokensHistoricalReset] = []
-    for provider in providers {
-        for (index, window) in provider.windows.enumerated() {
+    for provider in providers where provider.enabled {
+        for (index, window) in provider.windows.enumerated() where !window.isStale {
             let color = provider.color(forWindowIndex: index)
             let windowSec = TimeInterval(window.windowMinutes * 60)
             // Group past samples by their reset time (rounded to the minute).
@@ -335,7 +337,15 @@ internal final class AITokensSettings: NSStackView, Settings_v {
         let now = Date()
         for provider in usage.providers where !provider.windows.isEmpty {
             var rows: [PreferencesRow] = []
-            for window in provider.windows {
+            
+            let toggle = self.switchView(
+                action: #selector(self.toggleProvider(_:)),
+                state: provider.enabled
+            )
+            toggle.identifier = NSUserInterfaceItemIdentifier(provider.id)
+            rows.append(PreferencesRow(localizedString("Enabled"), component: toggle))
+            
+            for window in provider.windows where !window.isStale {
                 guard let latest = window.latest else { continue }
                 let used = "\(Int(latest.usedPercent.rounded()))%"
                 let upcoming = aiTokensUpcomingReset(window, from: now) ?? latest.resetsAt
@@ -382,6 +392,13 @@ internal final class AITokensSettings: NSStackView, Settings_v {
     }
 
     @objc private func refreshClicked(_ sender: NSButton) {
+        self.refreshNow()
+    }
+
+    @objc private func toggleProvider(_ sender: NSSwitch) {
+        guard let id = sender.identifier?.rawValue else { return }
+        let value = controlState(sender)
+        Store.shared.set(key: "AITokens_\(id)_enabled", value: value)
         self.refreshNow()
     }
 }
@@ -434,15 +451,16 @@ public final class AITokens: Module {
                 self.portalView.usageCallback(value)
 
                 let percent = value.primaryWindow.map { $0.window.latest?.usedPercent ?? 0 } ?? 0
-                let fraction = percent / 100.0
+                let remainingPercent = 100.0 - percent
+                let fraction = remainingPercent / 100.0
                 self.menuBar.widgets.filter { $0.isActive }.forEach { (w: SWidget) in
                     switch w.item {
                     case let widget as Mini:
                         widget.setValue(fraction)
-                        widget.setColorZones((0.6, 0.8))
+                        widget.setColorZones((0.2, 0.4))
                     case let widget as BarChart:
                         widget.setValue([[ColorValue(fraction)]])
-                        widget.setColorZones((0.6, 0.8))
+                        widget.setColorZones((0.2, 0.4))
                     case let widget as LineChart:
                         widget.setValue(fraction)
                     default:

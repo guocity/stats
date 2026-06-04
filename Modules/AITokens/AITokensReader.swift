@@ -141,8 +141,9 @@ internal final class AITokensReader: Reader<AITokens_Usage> {
             let index = providers.count
             let name = multiple ? "\(base) \(index + 1)" : base
             let id = multiple ? "\(fileID)#\(accountShortID(key))" : fileID
+            let enabled = Store.shared.bool(key: "AITokens_\(id)_enabled", defaultValue: true)
             providers.append(AITokens_Provider(
-                id: id, name: name, windows: windows, colorSeed: fileID, accountIndex: index
+                id: id, name: name, windows: windows, colorSeed: fileID, accountIndex: index, enabled: enabled
             ))
         }
         return providers
