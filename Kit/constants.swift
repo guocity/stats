@@ -60,7 +60,8 @@ public enum ModuleType: Int {
     case iOSBattery
     case bluetooth
     case clock
-    
+    case aiTokens
+
     case combined
     
     public var stringValue: String {
@@ -75,6 +76,7 @@ public enum ModuleType: Int {
         case .iOSBattery: return "iOS Battery"
         case .bluetooth: return "Bluetooth"
         case .clock: return "Clock"
+        case .aiTokens: return "AI Tokens"
         case .combined: return ""
         }
     }

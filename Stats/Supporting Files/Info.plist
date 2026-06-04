@@ -17,7 +17,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>793</string>
+	<string>795</string>
 	<key>Description</key>
 	<string>Simple macOS system monitor in your menu bar</string>
 	<key>LSApplicationCategoryType</key>
@@ -33,8 +33,6 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>This permission allows obtaining battery level of Bluetooth devices</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Stats needs local network access to read battery data from iPhones and iPads connected over Wi‑Fi sync.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_apple-mobdev2._tcp</string>
@@ -42,6 +40,8 @@
 	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2020 Serhiy Mytrovtsiy. All rights reserved.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Stats needs local network access to read battery data from iPhones and iPads connected over Wi‑Fi sync.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSUserNotificationAlertStyle</key>

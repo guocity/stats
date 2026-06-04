@@ -96,6 +96,12 @@
 		5D1C0A012EAA11110000B008 /* iOSBatteryPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA11110000A008 /* iOSBatteryPreview.swift */; };
 		5D1C0A012EAA11110000B006 /* iOSBattery.config.plist in Resources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA11110000A006 /* iOSBattery.config.plist */; };
 		5D1C0A012EAA11110000B007 /* ios_battery_pymobiledevice3.py in Copy Files */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA11110000A007 /* ios_battery_pymobiledevice3.py */; };
+		5D1C0A012EAA22220000B001 /* AITokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA22220000A001 /* AITokens.swift */; };
+		5D1C0A012EAA22220000B002 /* AITokensReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA22220000A002 /* AITokensReader.swift */; };
+		5D1C0A012EAA22220000B003 /* AITokensPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA22220000A003 /* AITokensPopup.swift */; };
+		5D1C0A012EAA22220000B004 /* AITokensPortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA22220000A004 /* AITokensPortal.swift */; };
+		5D1C0A012EAA22220000B005 /* AITokensPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA22220000A005 /* AITokensPreview.swift */; };
+		5D1C0A012EAA22220000B006 /* AITokens.config.plist in Resources */ = {isa = PBXBuildFile; fileRef = 5D1C0A012EAA22220000A006 /* AITokens.config.plist */; };
 		5EC1B2E52E2FEAFB007042A6 /* UnitedWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC1B2E42E2FEAFB007042A6 /* UnitedWidget.swift */; };
 		5EE8037F29C36BDD0063D37D /* portal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EE8037E29C36BDD0063D37D /* portal.swift */; };
 		9A045EB72594F8D100ED58F2 /* Dashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A045EB62594F8D100ED58F2 /* Dashboard.swift */; };
@@ -601,6 +607,12 @@
 		5D1C0A012EAA11110000A008 /* iOSBatteryPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = iOSBatteryPreview.swift; path = Modules/iOSBattery/iOSBatteryPreview.swift; sourceTree = SOURCE_ROOT; };
 		5D1C0A012EAA11110000A006 /* iOSBattery.config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = iOSBattery.config.plist; path = Modules/iOSBattery/iOSBattery.config.plist; sourceTree = SOURCE_ROOT; };
 		5D1C0A012EAA11110000A007 /* ios_battery_pymobiledevice3.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; name = ios_battery_pymobiledevice3.py; path = Scripts/ios_battery_pymobiledevice3.py; sourceTree = SOURCE_ROOT; };
+		5D1C0A012EAA22220000A001 /* AITokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AITokens.swift; path = Modules/AITokens/AITokens.swift; sourceTree = SOURCE_ROOT; };
+		5D1C0A012EAA22220000A002 /* AITokensReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AITokensReader.swift; path = Modules/AITokens/AITokensReader.swift; sourceTree = SOURCE_ROOT; };
+		5D1C0A012EAA22220000A003 /* AITokensPopup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AITokensPopup.swift; path = Modules/AITokens/AITokensPopup.swift; sourceTree = SOURCE_ROOT; };
+		5D1C0A012EAA22220000A004 /* AITokensPortal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AITokensPortal.swift; path = Modules/AITokens/AITokensPortal.swift; sourceTree = SOURCE_ROOT; };
+		5D1C0A012EAA22220000A005 /* AITokensPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AITokensPreview.swift; path = Modules/AITokens/AITokensPreview.swift; sourceTree = SOURCE_ROOT; };
+		5D1C0A012EAA22220000A006 /* AITokens.config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = AITokens.config.plist; path = Modules/AITokens/AITokens.config.plist; sourceTree = SOURCE_ROOT; };
 		5EC1B2E42E2FEAFB007042A6 /* UnitedWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnitedWidget.swift; sourceTree = "<group>"; };
 		5EE8037E29C36BDD0063D37D /* portal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = portal.swift; sourceTree = "<group>"; };
 		62BA5F74254810C8009D0AC2 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -907,6 +919,12 @@
 				5D1C0A012EAA11110000A008 /* iOSBatteryPreview.swift */,
 				5D1C0A012EAA11110000A006 /* iOSBattery.config.plist */,
 				5D1C0A012EAA11110000A007 /* ios_battery_pymobiledevice3.py */,
+				5D1C0A012EAA22220000A001 /* AITokens.swift */,
+				5D1C0A012EAA22220000A002 /* AITokensReader.swift */,
+				5D1C0A012EAA22220000A003 /* AITokensPopup.swift */,
+				5D1C0A012EAA22220000A004 /* AITokensPortal.swift */,
+				5D1C0A012EAA22220000A005 /* AITokensPreview.swift */,
+				5D1C0A012EAA22220000A006 /* AITokens.config.plist */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -1944,6 +1962,7 @@
 				9A6CFC0122A1C9F5001E782D /* Assets.xcassets in Resources */,
 				9A9B25BB24F7DE2B00C3CCE6 /* Localizable.strings in Resources */,
 				5D1C0A012EAA11110000B006 /* iOSBattery.config.plist in Resources */,
+				5D1C0A012EAA22220000B006 /* AITokens.config.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2126,6 +2145,11 @@
 				5D1C0A012EAA11110000B004 /* iOSBatteryPortal.swift in Sources */,
 				5D1C0A012EAA11110000B005 /* AnyCodable.swift in Sources */,
 				5D1C0A012EAA11110000B008 /* iOSBatteryPreview.swift in Sources */,
+				5D1C0A012EAA22220000B001 /* AITokens.swift in Sources */,
+				5D1C0A012EAA22220000B002 /* AITokensReader.swift in Sources */,
+				5D1C0A012EAA22220000B003 /* AITokensPopup.swift in Sources */,
+				5D1C0A012EAA22220000B004 /* AITokensPortal.swift in Sources */,
+				5D1C0A012EAA22220000B005 /* AITokensPreview.swift in Sources */,
 				9A9EA9452476D34500E3B883 /* Update.swift in Sources */,
 				9A045EB72594F8D100ED58F2 /* Dashboard.swift in Sources */,
 				9A81C74E24499C7000825D92 /* Settings.swift in Sources */,

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Name</key>
+	<string>AI Tokens</string>
+	<key>Preview</key>
+	<dict>
+		<key>available</key>
+		<true/>
+	</dict>
+	<key>Settings</key>
+	<dict>
+		<key>module</key>
+		<true/>
+		<key>notifications</key>
+		<false/>
+		<key>popup</key>
+		<true/>
+	</dict>
+	<key>State</key>
+	<true/>
+	<key>Symbol</key>
+	<string>cpu.fill</string>
+	<key>Widgets</key>
+	<dict>
+		<key>mini</key>
+		<dict>
+			<key>Default</key>
+			<true/>
+			<key>Order</key>
+			<integer>0</integer>
+			<key>Preview</key>
+			<dict>
+				<key>Value</key>
+				<string>0.62</string>
+			</dict>
+		</dict>
+		<key>bar_chart</key>
+		<dict>
+			<key>Default</key>
+			<false/>
+			<key>Order</key>
+			<integer>1</integer>
+			<key>Preview</key>
+			<dict>
+				<key>Color</key>
+				<true/>
+				<key>Value</key>
+				<string>0.62</string>
+			</dict>
+		</dict>
+		<key>line_chart</key>
+		<dict>
+			<key>Default</key>
+			<false/>
+			<key>Order</key>
+			<integer>2</integer>
+			<key>Preview</key>
+			<dict>
+				<key>Value</key>
+				<string>0.25, 0.62, 0.55, 0.85, 0.09</string>
+			</dict>
+		</dict>
+		<key>label</key>
+		<dict>
+			<key>Default</key>
+			<false/>
+			<key>Order</key>
+			<integer>3</integer>
+		</dict>
+	</dict>
+</dict>
+</plist>
