@@ -536,3 +536,43 @@ private enum LocalNetwork {
         }
     }
 }
+
+// MARK: - History (persisted in the program-level store)
+
+/// One persisted point of a device's battery aging metrics.
+struct iOSBatteryHistorySample: Codable {
+    let t: Double        // epoch seconds
+    let cycles: Int?
+    let health: Double?  // percent, 0...100
+}
+
+/// Per-device cycle-count / health history, stored as JSON in `Store` (survives relaunches).
+enum iOSBatteryHistory {
+    private static let maxSamples = 1000
+    private static func key(_ udid: String) -> String { "iOSBattery_history_\(udid)" }
+
+    static func samples(for udid: String) -> [iOSBatteryHistorySample] {
+        guard let data = Store.shared.data(key: key(udid)) else { return [] }
+        return (try? JSONDecoder().decode([iOSBatteryHistorySample].self, from: data)) ?? []
+    }
+
+    /// Appends a sample for every connected device, but only when cycles or health changed
+    /// (these age slowly, so the series stays small and meaningful).
+    static func record(_ usage: iOSBattery_Usage) {
+        let now = Date().timeIntervalSince1970
+        for d in usage.connectedDevices {
+            guard let udid = d.udid, !udid.isEmpty else { continue }
+            let cycles = d.cycleCount
+            let health = d.healthPercent.map { ($0 * 100).rounded() / 100 }
+            guard cycles != nil || health != nil else { continue }
+
+            var arr = samples(for: udid)
+            if let last = arr.last, last.cycles == cycles, last.health == health { continue }
+            arr.append(iOSBatteryHistorySample(t: now, cycles: cycles, health: health))
+            if arr.count > maxSamples { arr = Array(arr.suffix(maxSamples)) }
+            if let data = try? JSONEncoder().encode(arr) {
+                Store.shared.set(key: key(udid), value: data)
+            }
+        }
+    }
+}

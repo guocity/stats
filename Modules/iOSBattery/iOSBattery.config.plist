@@ -4,44 +4,39 @@
 <dict>
 	<key>Name</key>
 	<string>iOS Battery</string>
+	<key>Preview</key>
+	<dict>
+		<key>available</key>
+		<true/>
+	</dict>
+	<key>Settings</key>
+	<dict>
+		<key>module</key>
+		<true/>
+		<key>notifications</key>
+		<false/>
+		<key>popup</key>
+		<true/>
+	</dict>
 	<key>State</key>
 	<true/>
 	<key>Symbol</key>
 	<string>battery.100.bolt</string>
 	<key>Widgets</key>
 	<dict>
-		<key>label</key>
-		<dict>
-			<key>Default</key>
-			<false/>
-			<key>Order</key>
-			<integer>0</integer>
-		</dict>
-		<key>mini</key>
-		<dict>
-			<key>Default</key>
-			<false/>
-			<key>Preview</key>
-			<dict>
-				<key>Value</key>
-				<string>0.72</string>
-			</dict>
-			<key>Order</key>
-			<integer>1</integer>
-		</dict>
 		<key>bar_chart</key>
 		<dict>
 			<key>Default</key>
 			<false/>
-			<key>Preview</key>
-			<dict>
-				<key>Value</key>
-				<string>0.9</string>
-				<key>Color</key>
-				<true/>
-			</dict>
 			<key>Order</key>
 			<integer>2</integer>
+			<key>Preview</key>
+			<dict>
+				<key>Color</key>
+				<true/>
+				<key>Value</key>
+				<string>0.9</string>
+			</dict>
 		</dict>
 		<key>battery</key>
 		<dict>
@@ -57,16 +52,25 @@
 			<key>Order</key>
 			<integer>4</integer>
 		</dict>
-	</dict>
-	<key>Settings</key>
-	<dict>
-		<key>module</key>
-		<true/>
-		<key>popup</key>
-		<true/>
-		<key>notifications</key>
-		<false/>
+		<key>label</key>
+		<dict>
+			<key>Default</key>
+			<false/>
+			<key>Order</key>
+			<integer>0</integer>
+		</dict>
+		<key>mini</key>
+		<dict>
+			<key>Default</key>
+			<false/>
+			<key>Order</key>
+			<integer>1</integer>
+			<key>Preview</key>
+			<dict>
+				<key>Value</key>
+				<string>0.72</string>
+			</dict>
+		</dict>
 	</dict>
 </dict>
 </plist>
-

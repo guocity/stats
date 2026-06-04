@@ -649,6 +649,7 @@ public final class iOSBattery: Module {
     private let portalView: iOSBatteryPortal
     private let settingsContent: iOSBatterySettings
     private let pythonSettingsContent: iOSBatteryPythonSettings
+    private let previewContent: iOSBatteryPreview
 
     private var usageReader: iOSBatteryReader? = nil
 
@@ -657,6 +658,7 @@ public final class iOSBattery: Module {
         self.portalView = iOSBatteryPortal(.iOSBattery)
         self.settingsContent = iOSBatterySettings(.iOSBattery)
         self.pythonSettingsContent = iOSBatteryPythonSettings(.iOSBattery)
+        self.previewContent = iOSBatteryPreview(.iOSBattery)
 
         super.init(
             moduleType: .iOSBattery,
@@ -664,7 +666,7 @@ public final class iOSBattery: Module {
             settings: self.settingsContent,
             portal: self.portalView,
             notifications: nil,
-            preview: nil,
+            preview: self.previewContent,
             configName: "iOSBattery.config",
             configBundle: Bundle.main,
             extraSettings: [(localizedString("Python"), self.pythonSettingsContent)]
@@ -691,9 +693,11 @@ public final class iOSBattery: Module {
         
         self.usageReader = iOSBatteryReader(.iOSBattery) { [weak self] value in
             guard let self, let value else { return }
+            iOSBatteryHistory.record(value)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.settingsContent.apply(value)
+                self.previewContent.usageCallback(value)
                 self.popupView.usageCallback(value)
                 self.portalView.usageCallback(value)
             }

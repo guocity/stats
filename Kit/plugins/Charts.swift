@@ -207,7 +207,10 @@ public class LineChartView: ChartView {
     private var isTooltipEnabled: Bool = true
     private var xLegend: Bool = false
     private var yLegend: Bool = false
-    
+    /// When set, the y-axis labels show absolute values (label = formatter(max * step/100))
+    /// instead of the default `0…100%`. Used for non-percentage series (e.g. cycle count).
+    private var yLegendFormatter: ((Double) -> String)?
+
     private var scale: Scale
     private var fixedScale: Double
     private var zeroValue: Double
@@ -271,6 +274,7 @@ public class LineChartView: ChartView {
         var color: NSColor = .controlAccentColor
         var suffix: String = "%"
         var toolTipFunc: ((DoubleValue) -> String)?
+        var yLegendFormatter: ((Double) -> String)?
         var isTooltipEnabled: Bool = true
         var xLegend: Bool = false
         var yLegend: Bool = false
@@ -286,6 +290,7 @@ public class LineChartView: ChartView {
             color = self.color
             suffix = self.suffix
             toolTipFunc = self.toolTipFunc
+            yLegendFormatter = self.yLegendFormatter
             isTooltipEnabled = self.isTooltipEnabled
             xLegend = self.xLegend
             yLegend = self.yLegend
@@ -460,7 +465,7 @@ public class LineChartView: ChartView {
                     line.stroke()
                 }
                 
-                let label = "\(step)\(suffix)"
+                let label = yLegendFormatter != nil ? yLegendFormatter!(maxValue * Double(step) / 100) : "\(step)\(suffix)"
                 let attrStr = NSAttributedString(string: label, attributes: legendAttributes)
                 attrStr.draw(at: CGPoint(x: 0, y: textY))
             }
@@ -695,6 +700,11 @@ public class LineChartView: ChartView {
     
     public func setToolTipFunc(_ newValue: ((DoubleValue) -> String)?) {
         self.write { self.toolTipFunc = newValue }
+    }
+
+    public func setYLegendFormatter(_ newValue: ((Double) -> String)?) {
+        self.write { self.yLegendFormatter = newValue }
+        self.displayIfVisible()
     }
     
     public func setTooltipEnabled(_ newValue: Bool) {
