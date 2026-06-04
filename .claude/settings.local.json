@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(grep -E \"^-.*\\\\.\\(sh|py\\)$\")",
+      "Bash(xcodebuild -project Stats.xcodeproj -list)",
+      "Bash(xcodebuild -project Stats.xcodeproj -scheme Stats -configuration Release build)",
+      "Bash(rm -rf /tmp/Stats_DMG)",
+      "Bash(mkdir -p /tmp/Stats_DMG)",
+      "Bash(cp -r /Users/leon/Library/Developer/Xcode/DerivedData/Stats-hdeqxbjrrnulilbjmeaockchlmzi/Build/Products/Release/Stats.app /tmp/Stats_DMG/)",
+      "Bash(ln -s /Applications /tmp/Stats_DMG/Applications)",
+      "Bash(hdiutil create *)"
     ]
   }
 }

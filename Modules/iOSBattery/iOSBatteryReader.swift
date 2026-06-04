@@ -546,26 +546,101 @@ struct iOSBatteryHistorySample: Codable {
     let health: Double?  // percent, 0...100
 }
 
+/// Last-known identity and battery state for a device, persisted so the preview can keep
+/// showing a device — with its most recent values — even while it is currently disconnected.
+struct iOSBatteryDeviceRecord: Codable {
+    var udid: String
+    var deviceName: String?
+    var productType: String?
+    var productVersion: String?
+    var currentCapacityPercent: Int?
+    var isCharging: Bool?
+    var cycleCount: Int?
+    var healthPercent: Double?  // percent, 0...100
+    var lastSeen: Double        // epoch seconds
+
+    /// A (stale) snapshot rebuilt from the stored record, for rendering a disconnected device.
+    var snapshot: iOSBattery_DeviceSnapshot {
+        var s = iOSBattery_DeviceSnapshot()
+        s.udid = udid
+        s.deviceName = deviceName
+        s.productType = productType
+        s.productVersion = productVersion
+        s.currentCapacityPercent = currentCapacityPercent
+        s.isCharging = isCharging
+        s.cycleCount = cycleCount
+        s.batteryHealthPercent = healthPercent
+        s.updateTime = lastSeen
+        s.isStale = true
+        return s
+    }
+}
+
 /// Per-device cycle-count / health history, stored as JSON in `Store` (survives relaunches).
+/// Also keeps a lightweight identity record + index of every device ever seen, so the preview
+/// can list devices regardless of whether they are currently connected.
 enum iOSBatteryHistory {
     private static let maxSamples = 1000
+    private static let indexKey = "iOSBattery_history_index"
     private static func key(_ udid: String) -> String { "iOSBattery_history_\(udid)" }
+    private static func recordKey(_ udid: String) -> String { "iOSBattery_device_\(udid)" }
 
     static func samples(for udid: String) -> [iOSBatteryHistorySample] {
         guard let data = Store.shared.data(key: key(udid)) else { return [] }
         return (try? JSONDecoder().decode([iOSBatteryHistorySample].self, from: data)) ?? []
     }
 
-    /// Appends a sample for every connected device, but only when cycles or health changed
-    /// (these age slowly, so the series stays small and meaningful).
+    /// UDIDs of every device ever recorded, connected or not.
+    static func knownUDIDs() -> [String] {
+        guard let data = Store.shared.data(key: indexKey) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    static func deviceRecord(for udid: String) -> iOSBatteryDeviceRecord? {
+        guard let data = Store.shared.data(key: recordKey(udid)) else { return nil }
+        return try? JSONDecoder().decode(iOSBatteryDeviceRecord.self, from: data)
+    }
+
+    private static func addToIndex(_ udid: String) {
+        var ids = knownUDIDs()
+        guard !ids.contains(udid) else { return }
+        ids.append(udid)
+        if let data = try? JSONEncoder().encode(ids) {
+            Store.shared.set(key: indexKey, value: data)
+        }
+    }
+
+    /// For every connected device: refresh its identity record (so it stays visible while
+    /// disconnected, with up-to-date "last seen" and last-known charge) and append a history
+    /// point — but only when cycles or health changed (these age slowly, so the series stays
+    /// small and meaningful).
     static func record(_ usage: iOSBattery_Usage) {
         let now = Date().timeIntervalSince1970
         for d in usage.connectedDevices {
             guard let udid = d.udid, !udid.isEmpty else { continue }
             let cycles = d.cycleCount
             let health = d.healthPercent.map { ($0 * 100).rounded() / 100 }
-            guard cycles != nil || health != nil else { continue }
 
+            // Persist identity for any device carrying an identifier or battery data.
+            if d.isIdentified || d.currentCapacityPercent != nil || cycles != nil || health != nil {
+                let rec = iOSBatteryDeviceRecord(
+                    udid: udid,
+                    deviceName: d.deviceName,
+                    productType: d.productType,
+                    productVersion: d.productVersion,
+                    currentCapacityPercent: d.currentCapacityPercent,
+                    isCharging: d.isCharging,
+                    cycleCount: cycles,
+                    healthPercent: health,
+                    lastSeen: now
+                )
+                if let data = try? JSONEncoder().encode(rec) {
+                    Store.shared.set(key: recordKey(udid), value: data)
+                }
+                addToIndex(udid)
+            }
+
+            guard cycles != nil || health != nil else { continue }
             var arr = samples(for: udid)
             if let last = arr.last, last.cycles == cycles, last.health == health { continue }
             arr.append(iOSBatteryHistorySample(t: now, cycles: cycles, health: health))
