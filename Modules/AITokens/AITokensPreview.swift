@@ -302,6 +302,21 @@ private final class AITokensMultiLineChart: NSView {
     private let markerFormatter = DateFormatter()
     private let tooltipFormatter = DateFormatter()
 
+    private var panOffset: TimeInterval = 0
+    private var lastDefaultSpan: TimeInterval = 0
+    private var isScrollingHorizontal = false
+
+    private func clampPanOffset() {
+        let dataTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
+        guard let earliest = dataTS.min() else {
+            self.panOffset = 0
+            return
+        }
+        let vs = self.visibleStart?.timeIntervalSince1970 ?? earliest
+        let maxPan = max(0, vs - earliest)
+        self.panOffset = min(max(self.panOffset, 0), maxPan)
+    }
+
     /// A reset marker line, cached each draw so hover can show its date.
     private struct ResetMarker {
         let x: CGFloat
@@ -355,10 +370,78 @@ private final class AITokensMultiLineChart: NSView {
     func setData(series: [Series], now: Date, visibleStart: Date?, visibleEnd: Date?, historicalResets: [AITokensHistoricalReset]) {
         self.series = series.filter { !$0.points.isEmpty }
         self.now = now
+        
+        let oldSpan = self.lastDefaultSpan
+        let newSpan = visibleEnd?.timeIntervalSince(visibleStart ?? now) ?? 0
+        if abs(newSpan - oldSpan) > 1 {
+            self.panOffset = 0
+        }
+        self.lastDefaultSpan = newSpan
+        
         self.visibleStart = visibleStart
         self.visibleEnd = visibleEnd
         self.historicalResets = historicalResets
+        
+        self.clampPanOffset()
         self.needsDisplay = true
+    }
+
+    private func applyScroll(dx: CGFloat, hasPrecise: Bool) {
+        let yAxisWidth: CGFloat = 34
+        let chartWidth = max(1, self.bounds.width - yAxisWidth - 4)
+        
+        let dataTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
+        let resetTS = self.series.compactMap { $0.upcomingReset?.timeIntervalSince1970 }
+        let nowTS = self.now.timeIntervalSince1970
+        let vs = self.visibleStart?.timeIntervalSince1970 ?? dataTS.min() ?? nowTS
+        let ve = self.visibleEnd?.timeIntervalSince1970 ?? max((dataTS.max() ?? nowTS), nowTS, resetTS.max() ?? nowTS)
+        let span = ve > vs ? ve - vs : 1
+        
+        var scrollDelta = dx
+        if !hasPrecise {
+            scrollDelta *= 10
+        }
+        
+        // Apply sensitivity multiplier so scrolling isn't too fast/jumpy
+        let sensitivity = 0.6
+        let dt = TimeInterval(scrollDelta) * sensitivity * span / Double(chartWidth)
+        self.panOffset += dt
+        self.clampPanOffset()
+        self.needsDisplay = true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let hasPhase = !event.phase.isEmpty || !event.momentumPhase.isEmpty
+        
+        if hasPhase {
+            if event.phase == .began {
+                if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) {
+                    self.isScrollingHorizontal = true
+                } else {
+                    self.isScrollingHorizontal = false
+                }
+            }
+            
+            if self.isScrollingHorizontal {
+                let dx = event.scrollingDeltaX
+                if dx != 0 {
+                    self.applyScroll(dx: dx, hasPrecise: event.hasPreciseScrollingDeltas)
+                }
+                
+                if event.phase == .ended || event.phase == .cancelled {
+                    self.isScrollingHorizontal = false
+                }
+                return // Block propagation to parent scroll view during active gesture
+            }
+        } else {
+            let dx = event.scrollingDeltaX
+            if dx != 0 {
+                self.applyScroll(dx: dx, hasPrecise: event.hasPreciseScrollingDeltas)
+                return // Block propagation to parent scroll view
+            }
+        }
+        
+        super.scrollWheel(with: event)
     }
 
     private var darkMode: Bool {
@@ -399,8 +482,8 @@ private final class AITokensMultiLineChart: NSView {
         let dataTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
         let resetTS = self.series.compactMap { $0.upcomingReset?.timeIntervalSince1970 }
         let nowTS = self.now.timeIntervalSince1970
-        let tMin: Double
-        let tMax: Double
+        var tMin: Double
+        var tMax: Double
         if let vs = self.visibleStart?.timeIntervalSince1970, let ve = self.visibleEnd?.timeIntervalSince1970, ve > vs {
             tMin = vs
             tMax = ve
@@ -408,6 +491,10 @@ private final class AITokensMultiLineChart: NSView {
             tMin = dataTS.min() ?? nowTS
             tMax = max((dataTS.max() ?? nowTS), nowTS, resetTS.max() ?? nowTS)
         }
+        
+        tMin -= self.panOffset
+        tMax -= self.panOffset
+        
         let span = tMax > tMin ? tMax - tMin : 1
 
         // Short spans (≤ ~2 days) read as times; longer spans as calendar dates.
