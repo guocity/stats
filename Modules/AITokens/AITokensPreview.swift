@@ -5,6 +5,11 @@
 //  Module preview: per-provider summary (current usage, upcoming reset, last update)
 //  plus a shared usage-over-time line chart with one colored line per provider+window.
 //
+//  The chart is ONE continuous timeline. Its only state is an absolute visible window
+//  [viewStart, viewEnd] in unix seconds. Zoom and pan move that window directly; the
+//  range toggle (5H…1Y) is just a shortcut that jumps the window to a preset span. Zoom
+//  is free between a 1-hour floor and the full span of all recorded data.
+//
 
 import Cocoa
 import Kit
@@ -33,6 +38,13 @@ internal final class AITokensPreview: PreviewWrapper {
         self.rangeControl.target = self
         self.rangeControl.action = #selector(self.rangeChanged(_:))
         self.rangeControl.selectedSegment = self.selectedRange.rawValue
+
+        // Continuous zoom/pan only moves the highlight to the closest preset — it never changes
+        // the persisted range or recomputes the viewport. The chart owns the viewport.
+        self.usageChart.onZoomOrPan = { [weak self] range in
+            self?.rangeControl.selectedSegment = range.rawValue
+        }
+
         self.rebuild(AITokens_Usage())
     }
 
@@ -113,11 +125,12 @@ internal final class AITokensPreview: PreviewWrapper {
 
         let historical = aiTokensHistoricalResets(value.providers, before: now)
         self.updateRangeAvailability(value, now: now)
-        let window = self.visibleWindow(value, now: now)
+        // The chart keeps its own absolute viewport across refreshes; it only uses `initialPreset`
+        // the very first time data arrives, to pick a sensible starting window.
         self.usageChart.setData(
             series: series, now: now,
-            visibleStart: window.start, visibleEnd: window.end,
-            historicalResets: historical
+            historicalResets: historical,
+            initialPreset: self.selectedRange
         )
     }
 
@@ -144,37 +157,14 @@ internal final class AITokensPreview: PreviewWrapper {
             self.selectedRange = fallback
             Store.shared.set(key: "AITokens_rangeIndex", value: fallback.rawValue)
         }
-        self.rangeControl.selectedSegment = self.selectedRange.rawValue
-    }
-
-    /// The [start, end] the chart should show for the selected range. `start` is clamped to the
-    /// earliest sample so we never render empty space to the left; `end` extends forward so the
-    /// upcoming reset is on-screen.
-    private func visibleWindow(_ value: AITokens_Usage, now: Date) -> (start: Date, end: Date) {
-        let timestamps = value.providers.flatMap { $0.windows.flatMap { $0.entries.map { $0.capturedAt } } }
-        let earliest = timestamps.min() ?? now.addingTimeInterval(-self.selectedRange.lookback)
-        let start = max(now.addingTimeInterval(-self.selectedRange.lookback), earliest)
-        var end = now.addingTimeInterval(self.selectedRange.lookforward)
-        
-        if self.selectedRange == .fiveHour || self.selectedRange == .day {
-            let maxWindowMinutes = self.selectedRange == .fiveHour ? 360 : 1440
-            let sessionResets = value.providers.filter { $0.enabled }.flatMap { p in
-                p.windows.filter { !$0.isStale && $0.windowMinutes <= maxWindowMinutes }
-                    .compactMap { aiTokensUpcomingReset($0, from: now) }
-            }
-            if let maxReset = sessionResets.filter({ $0 > now }).max() {
-                end = max(end, maxReset)
-            }
-        }
-        
-        return (start, end)
     }
 
     @objc private func rangeChanged(_ sender: NSSegmentedControl) {
         guard let range = AITokensRange(rawValue: sender.selectedSegment) else { return }
         self.selectedRange = range
         Store.shared.set(key: "AITokens_rangeIndex", value: range.rawValue)
-        self.refresh(self.lastUsage)
+        // Jump the continuous viewport to this preset span (animated). Data is unchanged.
+        self.usageChart.applyPreset(range, animated: true)
     }
 
     private func rangeRow() -> NSView {
@@ -269,6 +259,11 @@ private final class AITokensSummaryPanel {
 }
 
 // MARK: - Multi-series time chart (one colored line per provider+window)
+//
+// The chart renders every series on ONE shared, absolute time axis. The visible portion of
+// that axis is [viewStart, viewEnd] (unix seconds). There is no per-range "base span" — zoom
+// and pan mutate [viewStart, viewEnd] directly and it survives data refreshes unchanged, so
+// the timeline is continuous and the zoom level is stable.
 
 private final class AITokensMultiLineChart: NSView {
     struct Series {
@@ -291,32 +286,6 @@ private final class AITokensMultiLineChart: NSView {
         let color: NSColor
     }
 
-    private var series: [Series] = []
-    private var now: Date = Date()
-    private var visibleStart: Date?
-    private var visibleEnd: Date?
-    private var historicalResets: [AITokensHistoricalReset] = []
-    private let fixedYMax: Double?
-    private let yFormatter: (Double) -> String
-    private let axisFormatter = DateFormatter()
-    private let markerFormatter = DateFormatter()
-    private let tooltipFormatter = DateFormatter()
-
-    private var panOffset: TimeInterval = 0
-    private var lastDefaultSpan: TimeInterval = 0
-    private var isScrollingHorizontal = false
-
-    private func clampPanOffset() {
-        let dataTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
-        guard let earliest = dataTS.min() else {
-            self.panOffset = 0
-            return
-        }
-        let vs = self.visibleStart?.timeIntervalSince1970 ?? earliest
-        let maxPan = max(0, vs - earliest)
-        self.panOffset = min(max(self.panOffset, 0), maxPan)
-    }
-
     /// A reset marker line, cached each draw so hover can show its date.
     private struct ResetMarker {
         let x: CGFloat
@@ -324,6 +293,42 @@ private final class AITokensMultiLineChart: NSView {
         let label: String
         let color: NSColor
     }
+
+    private var series: [Series] = []
+    private var now: Date = Date()
+    private var historicalResets: [AITokensHistoricalReset] = []
+    private let fixedYMax: Double?
+    private let yFormatter: (Double) -> String
+    private let axisFormatter = DateFormatter()
+    private let markerFormatter = DateFormatter()
+    private let tooltipFormatter = DateFormatter()
+
+    // MARK: - Viewport: the single source of truth (unix seconds)
+
+    /// Currently rendered visible window. Animations interpolate this toward the targets.
+    private var viewStart: TimeInterval = 0
+    private var viewEnd: TimeInterval = 0
+    /// Target visible window the animation glides toward (equal to the rendered values for
+    /// direct gestures like pinch and 1:1 panning).
+    private var targetViewStart: TimeInterval = 0
+    private var targetViewEnd: TimeInterval = 0
+    /// Set once the first non-empty data arrives and a starting window is chosen.
+    private var viewportInitialized = false
+    /// The content's right edge at the previous refresh, used to detect "parked at the live edge".
+    private var prevContentMax: TimeInterval?
+
+    /// Zoom floor: never show less than one hour (lets the user zoom past the 5h preset).
+    private let minSpan: TimeInterval = 3_600
+    /// The 5-hour preset span — also the smallest the zoom-out ceiling is ever allowed to be,
+    /// so the "5H" button always works even with very little recorded data.
+    private let fiveHourSpan: TimeInterval = 18_000
+
+    private var isScrollingHorizontal = false
+    var onZoomOrPan: ((AITokensRange) -> Void)?
+
+    /// Display-link timer for smooth animated preset transitions.
+    private var displayLink: CVDisplayLink?
+    private var lastFrameTime: CFTimeInterval = 0
 
     private var projected: [Projected] = []
     private var resetMarkers: [ResetMarker] = []
@@ -343,6 +348,161 @@ private final class AITokensMultiLineChart: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    deinit {
+        self.stopDisplayLink()
+    }
+
+    // MARK: - Content bounds & viewport clamping
+
+    /// The full extent of everything that can be shown: from the earliest sample to the latest of
+    /// (last sample, now, furthest upcoming reset). This is the outer boundary the viewport pans
+    /// within and the limit of how far the user can zoom out ("all data").
+    private func contentBounds() -> (min: TimeInterval, max: TimeInterval) {
+        let dataTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
+        let resetTS = self.series.compactMap { $0.upcomingReset?.timeIntervalSince1970 }
+        let nowTS = self.now.timeIntervalSince1970
+        let mn = dataTS.min() ?? (nowTS - self.fiveHourSpan)
+        var mx = max(dataTS.max() ?? nowTS, nowTS)
+        if let r = resetTS.max() { mx = max(mx, r) }
+        if mx - mn < self.minSpan { mx = mn + self.minSpan }
+        return (mn, mx)
+    }
+
+    /// Largest span the user may zoom out to: the whole data extent, floored at the 5h preset.
+    private var maxSpan: TimeInterval {
+        let (mn, mx) = self.contentBounds()
+        return max(mx - mn, self.fiveHourSpan)
+    }
+
+    /// Clamp a proposed window so its span is within [minSpan, maxSpan] and it stays anchored to the
+    /// content. When the span covers everything, the recent edge is pinned to the right.
+    private func clampViewport(_ start: inout TimeInterval, _ end: inout TimeInterval) {
+        let (cMin, cMax) = self.contentBounds()
+        var span = end - start
+        span = min(max(span, self.minSpan), self.maxSpan)
+        let maxStart = cMax - span
+        if maxStart <= cMin {
+            start = cMax - span                     // span ≥ content → show all, recent pinned right
+        } else {
+            start = min(max(start, cMin), maxStart)
+        }
+        end = start + span
+    }
+
+    // MARK: - Data in
+
+    func setData(series: [Series], now: Date, historicalResets: [AITokensHistoricalReset], initialPreset: AITokensRange) {
+        self.series = series.filter { !$0.points.isEmpty }
+        self.now = now
+        self.historicalResets = historicalResets
+
+        guard !self.series.isEmpty else {
+            self.needsDisplay = true
+            return
+        }
+
+        let (_, cMax) = self.contentBounds()
+        if !self.viewportInitialized {
+            self.applyPreset(initialPreset, animated: false)
+            self.viewportInitialized = true
+        } else if let prev = self.prevContentMax, self.targetViewEnd >= prev - 1 {
+            // The user was parked at the live edge — keep following "now" as new data arrives.
+            let span = self.targetViewEnd - self.targetViewStart
+            self.targetViewEnd = cMax
+            self.targetViewStart = cMax - span
+            self.viewStart = self.targetViewStart
+            self.viewEnd = self.targetViewEnd
+            self.clampViewport(&self.viewStart, &self.viewEnd)
+            self.targetViewStart = self.viewStart
+            self.targetViewEnd = self.viewEnd
+        } else {
+            // Otherwise keep the user's window exactly where it is, only re-clamping to new bounds.
+            self.clampViewport(&self.viewStart, &self.viewEnd)
+            self.clampViewport(&self.targetViewStart, &self.targetViewEnd)
+        }
+        self.prevContentMax = cMax
+        self.needsDisplay = true
+    }
+
+    /// Jump the viewport to a preset span anchored at "now" (plus the preset's forward extension so
+    /// upcoming resets stay visible). Free zoom/pan afterwards is unaffected.
+    func applyPreset(_ range: AITokensRange, animated: Bool) {
+        guard !self.series.isEmpty else { return }
+        let nowTS = self.now.timeIntervalSince1970
+        var start = nowTS - range.lookback
+        var end = nowTS + range.lookforward
+        self.clampViewport(&start, &end)
+        self.targetViewStart = start
+        self.targetViewEnd = end
+        if animated {
+            self.ensureAnimating()
+        } else {
+            self.viewStart = start
+            self.viewEnd = end
+        }
+        self.needsDisplay = true
+    }
+
+    // MARK: - CVDisplayLink animation engine (preset transitions only)
+
+    private func startDisplayLink() {
+        guard self.displayLink == nil else { return }
+        var dl: CVDisplayLink?
+        CVDisplayLinkCreateWithActiveCGDisplays(&dl)
+        guard let dl else { return }
+        self.lastFrameTime = CACurrentMediaTime()
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        CVDisplayLinkSetOutputCallback(dl, { (_, _, _, _, _, userInfo) -> CVReturn in
+            guard let userInfo else { return kCVReturnSuccess }
+            let chart = Unmanaged<AITokensMultiLineChart>.fromOpaque(userInfo).takeUnretainedValue()
+            chart.animationTick()
+            return kCVReturnSuccess
+        }, selfPtr)
+        CVDisplayLinkStart(dl)
+        self.displayLink = dl
+    }
+
+    private func stopDisplayLink() {
+        guard let dl = self.displayLink else { return }
+        CVDisplayLinkStop(dl)
+        self.displayLink = nil
+    }
+
+    private func ensureAnimating() {
+        self.startDisplayLink()
+    }
+
+    /// Called ~60 fps by the display link; glides the rendered window toward the target.
+    private func animationTick() {
+        let t = CACurrentMediaTime()
+        let dt = min(t - self.lastFrameTime, 1.0 / 30.0)
+        self.lastFrameTime = t
+
+        let lerp = 1.0 - pow(0.0009, dt)   // snappy, frame-rate independent
+        let dStart = self.targetViewStart - self.viewStart
+        let dEnd = self.targetViewEnd - self.viewEnd
+        let thresh = max(1.0, (self.targetViewEnd - self.targetViewStart) * 1e-5)
+
+        var changed = false
+        if abs(dStart) > thresh || abs(dEnd) > thresh {
+            self.viewStart += dStart * lerp
+            self.viewEnd += dEnd * lerp
+            changed = true
+        } else if dStart != 0 || dEnd != 0 {
+            self.viewStart = self.targetViewStart
+            self.viewEnd = self.targetViewEnd
+            changed = true
+        }
+
+        if changed {
+            DispatchQueue.main.async { [weak self] in self?.needsDisplay = true }
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.stopDisplayLink() }
+        }
+    }
+
+    // MARK: - Hover tracking
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -367,86 +527,113 @@ private final class AITokensMultiLineChart: NSView {
         self.needsDisplay = true
     }
 
-    func setData(series: [Series], now: Date, visibleStart: Date?, visibleEnd: Date?, historicalResets: [AITokensHistoricalReset]) {
-        self.series = series.filter { !$0.points.isEmpty }
-        self.now = now
-        
-        let oldSpan = self.lastDefaultSpan
-        let newSpan = visibleEnd?.timeIntervalSince(visibleStart ?? now) ?? 0
-        if abs(newSpan - oldSpan) > 1 {
-            self.panOffset = 0
-        }
-        self.lastDefaultSpan = newSpan
-        
-        self.visibleStart = visibleStart
-        self.visibleEnd = visibleEnd
-        self.historicalResets = historicalResets
-        
-        self.clampPanOffset()
-        self.needsDisplay = true
-    }
+    // MARK: - Pan (scroll)
 
-    private func applyScroll(dx: CGFloat, hasPrecise: Bool) {
+    /// Seconds of time per horizontal pixel for the current viewport.
+    private func currentTimePerPixel() -> TimeInterval {
         let yAxisWidth: CGFloat = 34
         let chartWidth = max(1, self.bounds.width - yAxisWidth - 4)
-        
-        let dataTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
-        let resetTS = self.series.compactMap { $0.upcomingReset?.timeIntervalSince1970 }
-        let nowTS = self.now.timeIntervalSince1970
-        let vs = self.visibleStart?.timeIntervalSince1970 ?? dataTS.min() ?? nowTS
-        let ve = self.visibleEnd?.timeIntervalSince1970 ?? max((dataTS.max() ?? nowTS), nowTS, resetTS.max() ?? nowTS)
-        let span = ve > vs ? ve - vs : 1
-        
-        var scrollDelta = dx
-        if !hasPrecise {
-            scrollDelta *= 10
-        }
-        
-        // Apply sensitivity multiplier so scrolling isn't too fast/jumpy
-        let sensitivity = 0.6
-        let dt = TimeInterval(scrollDelta) * sensitivity * span / Double(chartWidth)
-        self.panOffset += dt
-        self.clampPanOffset()
+        let span = max(self.viewEnd - self.viewStart, 1)
+        return span / Double(chartWidth)
+    }
+
+    /// Shift the whole viewport by a horizontal gesture delta (in points). Direct 1:1 — no animation.
+    private func panBy(_ dxPoints: CGFloat) {
+        let delta = TimeInterval(dxPoints) * self.currentTimePerPixel()
+        // Drag the content with the fingers: swiping right reveals earlier time.
+        self.viewStart -= delta
+        self.viewEnd -= delta
+        self.clampViewport(&self.viewStart, &self.viewEnd)
+        self.targetViewStart = self.viewStart
+        self.targetViewEnd = self.viewEnd
         self.needsDisplay = true
     }
 
     override func scrollWheel(with event: NSEvent) {
+        guard self.viewportInitialized else { super.scrollWheel(with: event); return }
         let hasPhase = !event.phase.isEmpty || !event.momentumPhase.isEmpty
-        
+
         if hasPhase {
+            // --- Trackpad (precise scrolling with gesture phases) ---
             if event.phase == .began {
-                if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) {
-                    self.isScrollingHorizontal = true
-                } else {
-                    self.isScrollingHorizontal = false
-                }
+                self.isScrollingHorizontal = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
             }
-            
             if self.isScrollingHorizontal {
-                let dx = event.scrollingDeltaX
-                if dx != 0 {
-                    self.applyScroll(dx: dx, hasPrecise: event.hasPreciseScrollingDeltas)
+                if event.scrollingDeltaX != 0 {
+                    // The OS feeds both active and momentum deltas — apply each directly.
+                    self.panBy(event.scrollingDeltaX)
                 }
-                
-                if event.phase == .ended || event.phase == .cancelled {
+                if event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .ended {
                     self.isScrollingHorizontal = false
+                    self.notifyZoomOrPan()
                 }
-                return // Block propagation to parent scroll view during active gesture
+                return
             }
         } else {
+            // --- Mouse scroll wheel (discrete, non-precise) ---
             let dx = event.scrollingDeltaX
             if dx != 0 {
-                self.applyScroll(dx: dx, hasPrecise: event.hasPreciseScrollingDeltas)
-                return // Block propagation to parent scroll view
+                self.panBy(dx * 10.0)   // mouse wheels report small deltas; scale up for usable panning
+                self.notifyZoomOrPan()
+                return
             }
         }
-        
+
         super.scrollWheel(with: event)
+    }
+
+    // MARK: - Zoom (pinch)
+
+    override func magnify(with event: NSEvent) {
+        guard self.viewportInitialized else { return }
+        let loc = self.convert(event.locationInWindow, from: nil)
+        let yAxisWidth: CGFloat = 34
+        let chartMinX = yAxisWidth
+        let chartWidth = max(1, self.bounds.width - yAxisWidth - 4)
+        let pct = min(max(Double((loc.x - chartMinX) / chartWidth), 0.0), 1.0)
+
+        // Keep the time under the cursor fixed while the span changes around it.
+        let curSpan = max(self.viewEnd - self.viewStart, self.minSpan)
+        let tMouse = self.viewStart + pct * curSpan
+
+        let k = 1.0 / (1.0 + Double(event.magnification))
+        var newSpan = curSpan * k
+        newSpan = min(max(newSpan, self.minSpan), self.maxSpan)
+
+        var newStart = tMouse - pct * newSpan
+        var newEnd = newStart + newSpan
+        self.clampViewport(&newStart, &newEnd)
+
+        // Pinch is 1:1 (no animation lag): set rendered and target together.
+        self.viewStart = newStart
+        self.viewEnd = newEnd
+        self.targetViewStart = newStart
+        self.targetViewEnd = newEnd
+        self.needsDisplay = true
+
+        if event.phase == .ended || event.phase == .cancelled {
+            self.notifyZoomOrPan()
+        }
+    }
+
+    /// Map the current span to the closest preset, so the segmented control can highlight it.
+    private func notifyZoomOrPan() {
+        let currentSpan = self.viewEnd - self.viewStart
+        var closest = AITokensRange.day
+        var minDiff = Double.greatestFiniteMagnitude
+        for r in AITokensRange.allCases {
+            let rSpan = r.lookback + r.lookforward
+            let diff = abs(currentSpan - rSpan)
+            if diff < minDiff { minDiff = diff; closest = r }
+        }
+        self.onZoomOrPan?(closest)
     }
 
     private var darkMode: Bool {
         self.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
+
+    // MARK: - Draw
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -477,25 +664,11 @@ private final class AITokensMultiLineChart: NSView {
 
         let yMax = max(1, self.fixedYMax ?? (self.series.flatMap { $0.points.map { $0.value } }.max() ?? 1))
 
-        // Time domain. Prefer the explicit visible window (the range toggle); otherwise auto-fit to
-        // the data plus the now / upcoming-reset markers.
-        let dataTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
-        let resetTS = self.series.compactMap { $0.upcomingReset?.timeIntervalSince1970 }
+        // The visible time domain is simply the current viewport.
         let nowTS = self.now.timeIntervalSince1970
-        var tMin: Double
-        var tMax: Double
-        if let vs = self.visibleStart?.timeIntervalSince1970, let ve = self.visibleEnd?.timeIntervalSince1970, ve > vs {
-            tMin = vs
-            tMax = ve
-        } else {
-            tMin = dataTS.min() ?? nowTS
-            tMax = max((dataTS.max() ?? nowTS), nowTS, resetTS.max() ?? nowTS)
-        }
-        
-        tMin -= self.panOffset
-        tMax -= self.panOffset
-        
-        let span = tMax > tMin ? tMax - tMin : 1
+        let tMin = self.viewStart
+        let tMax = self.viewEnd
+        let span = max(tMax - tMin, 1)
 
         // Short spans (≤ ~2 days) read as times; longer spans as calendar dates.
         if span <= 2 * 86_400 {
@@ -524,7 +697,7 @@ private final class AITokensMultiLineChart: NSView {
             (self.yFormatter(yMax * Double(step) / 100) as NSString).draw(at: CGPoint(x: 0, y: ly - 5), withAttributes: labelAttrs)
         }
 
-        // X labels: evenly spaced calendar dates across the axis (clear "d MMM", clamped to stay on-screen).
+        // X labels: evenly spaced dates across the axis (clamped to stay on-screen).
         let tickCount = 4
         var lastLabelMaxX: CGFloat = -.greatestFiniteMagnitude
         for i in 0..<tickCount {
@@ -538,7 +711,7 @@ private final class AITokensMultiLineChart: NSView {
             lastLabelMaxX = lx + size.width
         }
 
-        // Everything below is data inside the plot — clip it so zoomed-out samples / markers
+        // Everything below is data inside the plot — clip it so off-screen samples / markers
         // can't spill over the axes.
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: chartRect).addClip()

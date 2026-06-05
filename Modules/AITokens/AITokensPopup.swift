@@ -75,7 +75,7 @@ internal final class AITokensPopup: PopupWrapper {
                 let remainingFraction: Double
                 let countdownColor: NSColor
                 let resetsText: String
-                let resetTooltip: String
+                let resetAbsoluteText: String
                 if let upcoming = aiTokensUpcomingReset(window, from: now) {
                     // Fraction of the window's time still remaining (full just after a reset, empty at reset).
                     let windowSec = Double(window.windowMinutes * 60)
@@ -93,13 +93,13 @@ internal final class AITokensPopup: PopupWrapper {
                     }
                     
                     resetsText = aiTokensCountdown(to: upcoming, from: now)
-                    resetTooltip = "\(window.lengthLabel) \(localizedString("window")) · \(aiTokensCountdown(to: upcoming, from: now))"
+                    resetAbsoluteText = "\(localizedString("resets")) \(aiTokensAbsoluteDate(upcoming))"
                 } else {
                     // Inactive window (provider stopped reporting it) — show last-known usage, no countdown.
                     remainingFraction = 0
                     countdownColor = .tertiaryLabelColor
                     resetsText = "\(localizedString("inactive")) · \(localizedString("last seen")) \(aiTokensRelativeAge(latest.capturedAt, from: now))"
-                    resetTooltip = resetsText
+                    resetAbsoluteText = resetsText
                 }
                 self.stack.addArrangedSubview(AITokensWindowRow(
                     width: self.contentWidth,
@@ -108,7 +108,7 @@ internal final class AITokensPopup: PopupWrapper {
                     color: provider.color(forWindowIndex: index),
                     remainingFraction: remainingFraction,
                     countdownColor: countdownColor,
-                    resetTooltip: resetTooltip,
+                    resetAbsoluteText: resetAbsoluteText,
                     resets: resetsText,
                     updated: "\(localizedString("updated")) \(aiTokensRelativeAge(latest.capturedAt, from: now))",
                     compact: compact
@@ -153,10 +153,18 @@ internal final class AITokensPopup: PopupWrapper {
 
 private final class AITokensWindowRow: NSView {
     private let isCompact: Bool
+    private let countdownText: String
+    private let hoverText: String
+    private var resetField: NSTextField!
+    private var hoverTrackingArea: NSTrackingArea?
+    /// Bounds of the hover-sensitive zone (countdown bar + reset label), in this view's coordinates.
+    private var countdownZone: NSRect = .zero
 
     init(width: CGFloat, title: String, usedPercent: Double, color: NSColor,
-         remainingFraction: Double, countdownColor: NSColor, resetTooltip: String, resets: String, updated: String, compact: Bool) {
+         remainingFraction: Double, countdownColor: NSColor, resetAbsoluteText: String, resets: String, updated: String, compact: Bool) {
         self.isCompact = compact
+        self.countdownText = resets
+        self.hoverText = resetAbsoluteText
         super.init(frame: .zero)
         self.translatesAutoresizingMaskIntoConstraints = false
         self.widthAnchor.constraint(equalToConstant: width).isActive = true
@@ -189,12 +197,12 @@ private final class AITokensWindowRow: NSView {
         // Countdown bar (how much of the window's time is left until reset) — depletes toward the reset.
         let countdownBar = AITokensBarView(fraction: remainingFraction, color: countdownColor, severity: false)
         countdownBar.translatesAutoresizingMaskIntoConstraints = false
-        countdownBar.toolTip = resetTooltip
 
-        let resetField = ValueField(frame: .zero, resets)
-        resetField.font = NSFont.systemFont(ofSize: resetsSize, weight: .regular)
-        resetField.textColor = .secondaryLabelColor
-        resetField.translatesAutoresizingMaskIntoConstraints = false
+        let rf = ValueField(frame: .zero, resets)
+        rf.font = NSFont.systemFont(ofSize: resetsSize, weight: .regular)
+        rf.textColor = .secondaryLabelColor
+        rf.translatesAutoresizingMaskIntoConstraints = false
+        self.resetField = rf
 
         let updatedField = ValueField(frame: .zero, updated)
         updatedField.font = NSFont.systemFont(ofSize: resetsSize, weight: .regular)
@@ -206,7 +214,7 @@ private final class AITokensWindowRow: NSView {
         self.addSubview(percentField)
         self.addSubview(usageBar)
         self.addSubview(countdownBar)
-        self.addSubview(resetField)
+        self.addSubview(rf)
         self.addSubview(updatedField)
 
         let m = Constants.Popup.margins
@@ -232,10 +240,10 @@ private final class AITokensWindowRow: NSView {
             countdownBar.topAnchor.constraint(equalTo: usageBar.bottomAnchor, constant: countdownTopSpacing),
             countdownBar.heightAnchor.constraint(equalToConstant: countdownBarHeight),
 
-            resetField.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: m),
-            resetField.topAnchor.constraint(equalTo: countdownBar.bottomAnchor, constant: resetTopSpacing),
+            rf.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: m),
+            rf.topAnchor.constraint(equalTo: countdownBar.bottomAnchor, constant: resetTopSpacing),
             updatedField.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -m),
-            updatedField.centerYAnchor.constraint(equalTo: resetField.centerYAnchor)
+            updatedField.centerYAnchor.constraint(equalTo: rf.centerYAnchor)
         ])
     }
 
@@ -244,6 +252,41 @@ private final class AITokensWindowRow: NSView {
     }
 
     override var fittingSize: NSSize { NSSize(width: bounds.width, height: self.isCompact ? 42 : 60) }
+
+    // MARK: - Mouse hover to swap countdown ↔ absolute reset time
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let ta = self.hoverTrackingArea { self.removeTrackingArea(ta) }
+        // The hover zone covers the full row (simple and reliable).
+        let ta = NSTrackingArea(
+            rect: self.bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        self.addTrackingArea(ta)
+        self.hoverTrackingArea = ta
+
+        // Check if the mouse is already inside when this view is (re)created.
+        // This prevents a flash of countdown text when the row is rebuilt every second
+        // while the user is hovering.
+        if let window = self.window {
+            let loc = window.mouseLocationOutsideOfEventStream
+            let localLoc = self.convert(loc, from: nil)
+            if self.bounds.contains(localLoc) {
+                self.resetField.stringValue = self.hoverText
+            }
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        self.resetField.stringValue = self.hoverText
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        self.resetField.stringValue = self.countdownText
+    }
 }
 
 // MARK: - Usage bar (color zones: green → orange → red as usage climbs).
