@@ -30,8 +30,19 @@ internal final class AITokensPopup: PopupWrapper {
         fatalError("init(coder:) has not been implemented")
     }
 
+    private var timer: Timer? = nil
+
     public override func appear() {
         self.replay(self.cache, render: self.render)
+        self.timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.replay(self.cache, render: self.render)
+        }
+    }
+
+    public override func disappear() {
+        self.timer?.invalidate()
+        self.timer = nil
     }
 
     func usageCallback(_ value: AITokens_Usage) {
@@ -55,6 +66,8 @@ internal final class AITokensPopup: PopupWrapper {
         }
 
         let now = Date()
+        let compact = Store.shared.bool(key: "AITokens_compactPopup", defaultValue: true)
+
         for provider in providers {
             self.stack.addArrangedSubview(separatorView(provider.name, width: self.contentWidth))
             for (index, window) in provider.windows.enumerated() where !window.isStale {
@@ -68,11 +81,19 @@ internal final class AITokensPopup: PopupWrapper {
                     let windowSec = Double(window.windowMinutes * 60)
                     let remainingSec = upcoming.timeIntervalSince(now)
                     remainingFraction = windowSec > 0 ? max(0, min(1, remainingSec / windowSec)) : 0
-                    // Vibrant violet normally (blue-leaning so it doesn't read as pink); red under an hour.
-                    let vibrantPurple = NSColor(srgbRed: 0.52, green: 0.32, blue: 0.90, alpha: 1)
-                    countdownColor = remainingSec < 3600 ? .systemRed : vibrantPurple
-                    resetsText = "\(localizedString("resets")) \(aiTokensCountdown(to: upcoming, from: now)) · \(aiTokensAbsoluteDate(upcoming))"
-                    resetTooltip = "\(window.lengthLabel) \(localizedString("window")) · \(localizedString("resets")) \(aiTokensCountdown(to: upcoming, from: now))"
+                    
+                    if remainingSec < 3600 {
+                        countdownColor = .systemRed
+                    } else if remainingSec > 86400 {
+                        let colorKey = Store.shared.string(key: "AITokens_moreThanDayColor", defaultValue: "custom:#007AFFFF")
+                        countdownColor = SColor.fromString(colorKey).additional as? NSColor ?? NSColor.systemIndigo
+                    } else {
+                        let colorKey = Store.shared.string(key: "AITokens_lessThanDayColor", defaultValue: "custom:#4FA5FCFF")
+                        countdownColor = SColor.fromString(colorKey).additional as? NSColor ?? NSColor.systemBlue
+                    }
+                    
+                    resetsText = aiTokensCountdown(to: upcoming, from: now)
+                    resetTooltip = "\(window.lengthLabel) \(localizedString("window")) · \(aiTokensCountdown(to: upcoming, from: now))"
                 } else {
                     // Inactive window (provider stopped reporting it) — show last-known usage, no countdown.
                     remainingFraction = 0
@@ -89,7 +110,8 @@ internal final class AITokensPopup: PopupWrapper {
                     countdownColor: countdownColor,
                     resetTooltip: resetTooltip,
                     resets: resetsText,
-                    updated: "\(localizedString("updated")) \(aiTokensRelativeAge(latest.capturedAt, from: now))"
+                    updated: "\(localizedString("updated")) \(aiTokensRelativeAge(latest.capturedAt, from: now))",
+                    compact: compact
                 ))
             }
         }
@@ -130,22 +152,31 @@ internal final class AITokensPopup: PopupWrapper {
 // MARK: - One window row: name, usage bar, percent, reset + updated subtitle.
 
 private final class AITokensWindowRow: NSView {
-    private static let height: CGFloat = 60
+    private let isCompact: Bool
 
     init(width: CGFloat, title: String, usedPercent: Double, color: NSColor,
-         remainingFraction: Double, countdownColor: NSColor, resetTooltip: String, resets: String, updated: String) {
+         remainingFraction: Double, countdownColor: NSColor, resetTooltip: String, resets: String, updated: String, compact: Bool) {
+        self.isCompact = compact
         super.init(frame: .zero)
         self.translatesAutoresizingMaskIntoConstraints = false
         self.widthAnchor.constraint(equalToConstant: width).isActive = true
-        self.heightAnchor.constraint(equalToConstant: Self.height).isActive = true
+        
+        let rowHeight: CGFloat = compact ? 42 : 60
+        self.heightAnchor.constraint(equalToConstant: rowHeight).isActive = true
+
+        let titleSize: CGFloat = compact ? 11 : 12
+        let percentSize: CGFloat = compact ? 11 : 12
+        let resetsSize: CGFloat = compact ? 9 : 10
+        let usageBarHeight: CGFloat = compact ? 4 : 6
+        let countdownBarHeight: CGFloat = compact ? 1.5 : 2.5
 
         let titleField = LabelField(frame: .zero, title)
-        titleField.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        titleField.font = NSFont.systemFont(ofSize: titleSize, weight: .medium)
         titleField.textColor = .textColor
         titleField.translatesAutoresizingMaskIntoConstraints = false
 
         let percentField = ValueField(frame: .zero, "\(Int(usedPercent.rounded()))%")
-        percentField.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        percentField.font = NSFont.systemFont(ofSize: percentSize, weight: .semibold)
         percentField.alignment = .right
         percentField.translatesAutoresizingMaskIntoConstraints = false
 
@@ -161,12 +192,12 @@ private final class AITokensWindowRow: NSView {
         countdownBar.toolTip = resetTooltip
 
         let resetField = ValueField(frame: .zero, resets)
-        resetField.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+        resetField.font = NSFont.systemFont(ofSize: resetsSize, weight: .regular)
         resetField.textColor = .secondaryLabelColor
         resetField.translatesAutoresizingMaskIntoConstraints = false
 
         let updatedField = ValueField(frame: .zero, updated)
-        updatedField.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+        updatedField.font = NSFont.systemFont(ofSize: resetsSize, weight: .regular)
         updatedField.textColor = .tertiaryLabelColor
         updatedField.alignment = .right
         updatedField.translatesAutoresizingMaskIntoConstraints = false
@@ -179,25 +210,30 @@ private final class AITokensWindowRow: NSView {
         self.addSubview(updatedField)
 
         let m = Constants.Popup.margins
+        let topPadding: CGFloat = compact ? 2 : 4
+        let usageTopSpacing: CGFloat = compact ? 2 : 4
+        let countdownTopSpacing: CGFloat = compact ? 1.5 : 3
+        let resetTopSpacing: CGFloat = compact ? 1.5 : 3
+
         NSLayoutConstraint.activate([
             titleField.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: m),
-            titleField.topAnchor.constraint(equalTo: self.topAnchor, constant: 4),
+            titleField.topAnchor.constraint(equalTo: self.topAnchor, constant: topPadding),
             percentField.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -m),
             percentField.centerYAnchor.constraint(equalTo: titleField.centerYAnchor),
             percentField.widthAnchor.constraint(equalToConstant: 44),
 
             usageBar.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: m),
             usageBar.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -m),
-            usageBar.topAnchor.constraint(equalTo: titleField.bottomAnchor, constant: 4),
-            usageBar.heightAnchor.constraint(equalToConstant: 6),
+            usageBar.topAnchor.constraint(equalTo: titleField.bottomAnchor, constant: usageTopSpacing),
+            usageBar.heightAnchor.constraint(equalToConstant: usageBarHeight),
 
             countdownBar.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: m),
             countdownBar.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -m),
-            countdownBar.topAnchor.constraint(equalTo: usageBar.bottomAnchor, constant: 3),
-            countdownBar.heightAnchor.constraint(equalToConstant: 2.5),
+            countdownBar.topAnchor.constraint(equalTo: usageBar.bottomAnchor, constant: countdownTopSpacing),
+            countdownBar.heightAnchor.constraint(equalToConstant: countdownBarHeight),
 
             resetField.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: m),
-            resetField.topAnchor.constraint(equalTo: countdownBar.bottomAnchor, constant: 3),
+            resetField.topAnchor.constraint(equalTo: countdownBar.bottomAnchor, constant: resetTopSpacing),
             updatedField.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -m),
             updatedField.centerYAnchor.constraint(equalTo: resetField.centerYAnchor)
         ])
@@ -207,7 +243,7 @@ private final class AITokensWindowRow: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var fittingSize: NSSize { NSSize(width: bounds.width, height: Self.height) }
+    override var fittingSize: NSSize { NSSize(width: bounds.width, height: self.isCompact ? 42 : 60) }
 }
 
 // MARK: - Usage bar (color zones: green → orange → red as usage climbs).

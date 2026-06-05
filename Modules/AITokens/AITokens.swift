@@ -128,7 +128,7 @@ struct AITokens_Usage: Codable {
 func aiTokensProviderColor(_ id: String) -> NSColor {
     switch id.lowercased() {
     case "claude", "anthropic": return .systemOrange
-    case "codex", "openai", "chatgpt": return .systemBlue
+    case "codex", "openai", "chatgpt": return .systemGreen
     case "gemini", "google": return .systemTeal
     case "copilot", "github": return .systemPurple
     default:
@@ -229,16 +229,35 @@ func aiTokensHistoricalResets(_ providers: [AITokens_Provider], before now: Date
     return out.sorted { $0.date < $1.date }
 }
 
-/// "2d 3h", "5h 12m", "12m", or "now" — a compact countdown until `date`.
+/// "#d #h #m", "12m 3s", or "now" — a countdown until `date`.
 func aiTokensCountdown(to date: Date, from now: Date = Date()) -> String {
     let seconds = Int(date.timeIntervalSince(now))
     if seconds <= 0 { return localizedString("now") }
+    
     let days = seconds / 86400
     let hours = (seconds % 86400) / 3600
     let minutes = (seconds % 3600) / 60
-    if days > 0 { return hours > 0 ? "\(days)d \(hours)h" : "\(days)d" }
-    if hours > 0 { return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h" }
-    return "\(max(1, minutes))m"
+    let secs = seconds % 60
+    
+    if seconds < 3600 {
+        if minutes > 0 {
+            return "\(minutes)m \(secs)s"
+        }
+        return "\(secs)s"
+    }
+    
+    if days > 0 {
+        if minutes > 0 {
+            return "\(days)d \(hours)h \(minutes)m"
+        }
+        return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
+    }
+    
+    if hours > 0 {
+        return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+    }
+    
+    return minutes > 0 ? "\(minutes)m" : "now"
 }
 
 /// Absolute date for a reset / capture time, e.g. "31 Mar, 14:36".
@@ -351,12 +370,47 @@ internal final class AITokensSettings: NSStackView, Settings_v {
                 let upcoming = aiTokensUpcomingReset(window, from: now) ?? latest.resetsAt
                 let resets = "\(aiTokensCountdown(to: upcoming, from: now)) (\(aiTokensAbsoluteDate(upcoming)))"
                 rows.append(PreferencesRow("\(window.displayName) — \(localizedString("used"))", component: ValueField(frame: .zero, used)))
-                rows.append(PreferencesRow("\(window.displayName) — \(localizedString("resets"))", component: ValueField(frame: .zero, resets)))
-                rows.append(PreferencesRow("\(window.displayName) — \(localizedString("updated"))", component: ValueField(frame: .zero, "\(aiTokensAbsoluteDate(latest.capturedAt)) (\(aiTokensRelativeAge(latest.capturedAt, from: now)))")))
+                rows.append(PreferencesRow(
+                    "\(window.displayName) — \(localizedString("resets"))",
+                    component: ValueField(frame: .zero, resets)
+                ))
+                let updatedVal = "\(aiTokensAbsoluteDate(latest.capturedAt)) (\(aiTokensRelativeAge(latest.capturedAt, from: now)))"
+                rows.append(PreferencesRow(
+                    "\(window.displayName) — \(localizedString("updated"))",
+                    component: ValueField(frame: .zero, updatedVal)
+                ))
             }
             if rows.isEmpty { continue }
             self.addArrangedSubview(PreferencesSection(title: provider.name, rows))
         }
+
+        // Popup section configuration
+        let compactState = Store.shared.bool(key: "AITokens_compactPopup", defaultValue: true)
+        let moreThanDayColorKey = Store.shared.string(key: "AITokens_moreThanDayColor", defaultValue: "custom:#007AFFFF")
+        let lessThanDayColorKey = Store.shared.string(key: "AITokens_lessThanDayColor", defaultValue: "custom:#4FA5FCFF")
+        
+        let compactSwitch = self.switchView(
+            action: #selector(self.toggleCompactPopup(_:)),
+            state: compactState
+        )
+        
+        let moreThanDayPicker = self.colorSelectView(
+            action: #selector(self.changeMoreThanDayColor(_:)),
+            items: SColor.allColors,
+            selected: moreThanDayColorKey
+        )
+        
+        let lessThanDayPicker = self.colorSelectView(
+            action: #selector(self.changeLessThanDayColor(_:)),
+            items: SColor.allColors,
+            selected: lessThanDayColorKey
+        )
+        
+        self.addArrangedSubview(PreferencesSection(title: localizedString("Popup"), [
+            PreferencesRow(localizedString("Compact layout"), component: compactSwitch),
+            PreferencesRow(localizedString("Color (> 1 day)"), component: moreThanDayPicker),
+            PreferencesRow(localizedString("Color (< 1 day)"), component: lessThanDayPicker)
+        ]))
     }
 
     private func valueMultiline(_ text: String) -> NSView {
@@ -399,6 +453,24 @@ internal final class AITokensSettings: NSStackView, Settings_v {
         guard let id = sender.identifier?.rawValue else { return }
         let value = controlState(sender)
         Store.shared.set(key: "AITokens_\(id)_enabled", value: value)
+        self.refreshNow()
+    }
+
+    @objc private func toggleCompactPopup(_ sender: NSSwitch) {
+        let value = controlState(sender)
+        Store.shared.set(key: "AITokens_compactPopup", value: value)
+        self.refreshNow()
+    }
+
+    @objc private func changeMoreThanDayColor(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        Store.shared.set(key: "AITokens_moreThanDayColor", value: key)
+        self.refreshNow()
+    }
+
+    @objc private func changeLessThanDayColor(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        Store.shared.set(key: "AITokens_lessThanDayColor", value: key)
         self.refreshNow()
     }
 }

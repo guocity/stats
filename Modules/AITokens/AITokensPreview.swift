@@ -154,7 +154,19 @@ internal final class AITokensPreview: PreviewWrapper {
         let timestamps = value.providers.flatMap { $0.windows.flatMap { $0.entries.map { $0.capturedAt } } }
         let earliest = timestamps.min() ?? now.addingTimeInterval(-self.selectedRange.lookback)
         let start = max(now.addingTimeInterval(-self.selectedRange.lookback), earliest)
-        let end = now.addingTimeInterval(self.selectedRange.lookforward)
+        var end = now.addingTimeInterval(self.selectedRange.lookforward)
+        
+        if self.selectedRange == .fiveHour || self.selectedRange == .day {
+            let maxWindowMinutes = self.selectedRange == .fiveHour ? 360 : 1440
+            let sessionResets = value.providers.filter { $0.enabled }.flatMap { p in
+                p.windows.filter { !$0.isStale && $0.windowMinutes <= maxWindowMinutes }
+                    .compactMap { aiTokensUpcomingReset($0, from: now) }
+            }
+            if let maxReset = sessionResets.filter({ $0 > now }).max() {
+                end = max(end, maxReset)
+            }
+        }
+        
         return (start, end)
     }
 
@@ -446,12 +458,15 @@ private final class AITokensMultiLineChart: NSView {
 
         self.resetMarkers.removeAll()
 
+        let nowX = min(max(xFor(nowTS), chartRect.minX), chartRect.maxX)
+
         // Historical (already-happened) fixed resets: thin vertical lines in a light tint of the
         // provider's color, so it's clear which provider each past reset belongs to.
         for reset in self.historicalResets {
             let ts = reset.date.timeIntervalSince1970
             guard ts >= tMin, ts <= tMax else { continue }
             let x = xFor(ts)
+            if abs(x - nowX) < 20 { continue }
             let line = NSBezierPath()
             line.move(to: CGPoint(x: x, y: chartRect.minY))
             line.line(to: CGPoint(x: x, y: chartRect.maxY))
@@ -467,9 +482,11 @@ private final class AITokensMultiLineChart: NSView {
         for s in self.series {
             guard let reset = s.upcomingReset else { continue }
             let ts = reset.timeIntervalSince1970
+            guard ts >= tMin, ts <= tMax else { continue }
             let minuteKey = Int(ts / 60)
             guard drawnResetMinutes.insert(minuteKey).inserted else { continue }
-            let x = min(max(xFor(ts), chartRect.minX), chartRect.maxX)
+            let x = xFor(ts)
+            if abs(x - nowX) < 20 { continue }
             let line = NSBezierPath()
             line.move(to: CGPoint(x: x, y: chartRect.minY))
             line.line(to: CGPoint(x: x, y: chartRect.maxY))
@@ -483,7 +500,6 @@ private final class AITokensMultiLineChart: NSView {
         }
 
         // "Now" marker: a dotted red vertical line (no label).
-        let nowX = min(max(xFor(nowTS), chartRect.minX), chartRect.maxX)
         let nowLine = NSBezierPath()
         nowLine.move(to: CGPoint(x: nowX, y: chartRect.minY))
         nowLine.line(to: CGPoint(x: nowX, y: chartRect.maxY))

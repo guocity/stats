@@ -21,7 +21,7 @@ private let iOSBatteryDeviceColors: [NSColor] = [
 ]
 
 /// Builds chart points from persisted samples, stamping each point with its real timestamp.
-fileprivate func historyPoints(_ samples: [iOSBatteryHistorySample], _ map: (iOSBatteryHistorySample) -> Double?) -> [DoubleValue] {
+private func historyPoints(_ samples: [iOSBatteryHistorySample], _ map: (iOSBatteryHistorySample) -> Double?) -> [DoubleValue] {
     samples.compactMap { s in
         guard let v = map(s) else { return nil }
         var dv = DoubleValue(v)
@@ -37,6 +37,31 @@ private struct iOSBatteryPreviewDevice {
     let color: NSColor
 }
 
+private enum iOSBatteryRange: Int, CaseIterable {
+    case month = 0
+    case sixMonths = 1
+    case year = 2
+    case max = 3
+
+    var title: String {
+        switch self {
+        case .month: return "1M"
+        case .sixMonths: return "6M"
+        case .year: return "1Y"
+        case .max: return "Max"
+        }
+    }
+
+    var lookback: TimeInterval {
+        switch self {
+        case .month: return 30 * 24 * 3600
+        case .sixMonths: return 180 * 24 * 3600
+        case .year: return 365 * 24 * 3600
+        case .max: return .infinity
+        }
+    }
+}
+
 internal final class iOSBatteryPreview: PreviewWrapper {
     private var panels: [String: iOSBatteryDevicePanel] = [:]
     private var signature: [String] = []
@@ -44,13 +69,100 @@ internal final class iOSBatteryPreview: PreviewWrapper {
     private let cyclesChart = iOSBatteryMultiLineChart(fixedYMax: nil) { "\(Int($0.rounded()))" }
     private let healthChart = iOSBatteryMultiLineChart(fixedYMax: 100) { "\(Int($0.rounded()))%" }
 
+    private let rangeControl: NSSegmentedControl = {
+        let c = NSSegmentedControl(
+            labels: iOSBatteryRange.allCases.map { $0.title },
+            trackingMode: .selectOne, target: nil, action: nil
+        )
+        c.segmentStyle = .rounded
+        c.controlSize = .small
+        c.translatesAutoresizingMaskIntoConstraints = false
+        return c
+    }()
+    private var selectedRange: iOSBatteryRange = .month
+
     public init(_ module: ModuleType) {
         super.init(type: module)
+        let saved = Store.shared.int(key: "iOSBattery_rangeIndex", defaultValue: iOSBatteryRange.month.rawValue)
+        self.selectedRange = iOSBatteryRange(rawValue: saved) ?? .month
+        self.rangeControl.target = self
+        self.rangeControl.action = #selector(self.rangeChanged(_:))
+        self.rangeControl.selectedSegment = self.selectedRange.rawValue
+        
+        self.cyclesChart.setLookback(self.selectedRange.lookback)
+        self.healthChart.setLookback(self.selectedRange.lookback)
         self.rebuild(devices: [])
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func rangeChanged(_ sender: NSSegmentedControl) {
+        guard let range = iOSBatteryRange(rawValue: sender.selectedSegment) else { return }
+        self.selectedRange = range
+        Store.shared.set(key: "iOSBattery_rangeIndex", value: range.rawValue)
+        self.cyclesChart.setLookback(range.lookback)
+        self.healthChart.setLookback(range.lookback)
+    }
+
+    private func rangeRow() -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.edgeInsets = NSEdgeInsets(
+            top: 0,
+            left: Constants.Settings.margin,
+            bottom: 0,
+            right: Constants.Settings.margin
+        )
+        row.addArrangedSubview(NSView())          // push the control to the right
+        row.addArrangedSubview(self.rangeControl)
+        row.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        return row
+    }
+
+    private func getHistorySpan() -> TimeInterval {
+        var oldest: Double = Date().timeIntervalSince1970
+        for udid in iOSBatteryHistory.knownUDIDs() {
+            let samples = iOSBatteryHistory.samples(for: udid)
+            if let first = samples.first {
+                oldest = min(oldest, first.t)
+            }
+        }
+        return Date().timeIntervalSince1970 - oldest
+    }
+
+    private func updateRangeAvailability() {
+        let span = self.getHistorySpan()
+        for range in iOSBatteryRange.allCases {
+            let enabled: Bool
+            if range == .month {
+                enabled = true
+            } else if range == .max {
+                enabled = span > iOSBatteryRange.month.lookback
+            } else {
+                if let prev = iOSBatteryRange(rawValue: range.rawValue - 1) {
+                    enabled = span > prev.lookback
+                } else {
+                    enabled = true
+                }
+            }
+            self.rangeControl.setEnabled(enabled, forSegment: range.rawValue)
+        }
+        
+        var currentRange = self.selectedRange
+        if !self.rangeControl.isEnabled(forSegment: currentRange.rawValue) {
+            for range in iOSBatteryRange.allCases.reversed() where self.rangeControl.isEnabled(forSegment: range.rawValue) {
+                currentRange = range
+                break
+            }
+            self.selectedRange = currentRange
+            self.rangeControl.selectedSegment = currentRange.rawValue
+            Store.shared.set(key: "iOSBattery_rangeIndex", value: currentRange.rawValue)
+            self.cyclesChart.setLookback(currentRange.lookback)
+            self.healthChart.setLookback(currentRange.lookback)
+        }
     }
 
     internal func usageCallback(_ value: iOSBattery_Usage) {
@@ -77,8 +189,11 @@ internal final class iOSBatteryPreview: PreviewWrapper {
                 if !cycles.isEmpty { cycleSeries.append(.init(name: name, color: item.color, points: cycles)) }
                 if !health.isEmpty { healthSeries.append(.init(name: name, color: item.color, points: health)) }
             }
+            self.cyclesChart.setLookback(self.selectedRange.lookback)
+            self.healthChart.setLookback(self.selectedRange.lookback)
             self.cyclesChart.setSeries(cycleSeries)
             self.healthChart.setSeries(healthSeries)
+            self.updateRangeAvailability()
         }
     }
 
@@ -138,6 +253,9 @@ internal final class iOSBatteryPreview: PreviewWrapper {
             self.panels[udid] = panel
             self.addArrangedSubview(panel.section)
         }
+
+        // Add range selector row
+        self.addArrangedSubview(self.rangeRow())
 
         // Shared per-metric charts: every device on the same chart, one color per device.
         self.addArrangedSubview(PreferencesSection(title: localizedString("Cycle count history"), [chartContainer(self.cyclesChart)]))
@@ -253,21 +371,66 @@ private final class iOSBatteryMultiLineChart: NSView {
         let points: [DoubleValue]
     }
 
+    private struct Projected {
+        let point: CGPoint
+        let value: Double
+        let date: Date
+        let name: String
+        let color: NSColor
+    }
+
     private var series: [Series] = []
     private let fixedYMax: Double?
     private let yFormatter: (Double) -> String
-    private let dateFormatter = DateFormatter()
+    private let axisFormatter = DateFormatter()
+    private let tooltipFormatter = DateFormatter()
+    private var lookback: TimeInterval = 30 * 24 * 3600
+
+    private var projected: [Projected] = []
+    private var hoverLocation: CGPoint?
+    private var trackingArea: NSTrackingArea?
 
     init(fixedYMax: Double?, yFormatter: @escaping (Double) -> String) {
         self.fixedYMax = fixedYMax
         self.yFormatter = yFormatter
         super.init(frame: .zero)
-        self.dateFormatter.dateFormat = "dd/MM HH:mm"
+        self.axisFormatter.dateStyle = .short
+        self.axisFormatter.timeStyle = .none
+        self.tooltipFormatter.dateStyle = .short
+        self.tooltipFormatter.timeStyle = .short
         self.wantsLayer = true
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func setLookback(_ value: TimeInterval) {
+        self.lookback = value
+        self.needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = self.trackingArea { self.removeTrackingArea(existing) }
+        let area = NSTrackingArea(
+            rect: self.bounds,
+            options: [.activeInActiveApp, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        self.addTrackingArea(area)
+        self.trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        self.hoverLocation = self.convert(event.locationInWindow, from: nil)
+        self.needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        self.hoverLocation = nil
+        self.needsDisplay = true
     }
 
     func setSeries(_ newValue: [Series]) {
@@ -317,9 +480,9 @@ private final class iOSBatteryMultiLineChart: NSView {
         let allValues = self.series.flatMap { $0.points.map { $0.value } }
         let yMax = max(1, self.fixedYMax ?? self.niceCeil(allValues.max() ?? 1))
         let allTS = self.series.flatMap { $0.points.map { $0.ts.timeIntervalSince1970 } }
-        let tMin = allTS.min() ?? 0
-        let tMaxRaw = allTS.max() ?? (tMin + 1)
-        let tMax = tMaxRaw > tMin ? tMaxRaw : tMin + 1
+        let now = Date().timeIntervalSince1970
+        let tMin = self.lookback == .infinity ? (allTS.min() ?? (now - 30 * 24 * 3600)) : (now - self.lookback)
+        let tMax = now
 
         func xFor(_ ts: Double) -> CGFloat { chartRect.minX + CGFloat((ts - tMin) / (tMax - tMin)) * chartRect.width }
         func yFor(_ v: Double) -> CGFloat { chartRect.minY + CGFloat(min(max(v, 0), yMax) / yMax) * chartRect.height }
@@ -338,19 +501,86 @@ private final class iOSBatteryMultiLineChart: NSView {
             (self.yFormatter(yMax * Double(step) / 100) as NSString).draw(at: CGPoint(x: 0, y: ly - 5), withAttributes: labelAttrs)
         }
 
-        // X time labels (start / middle / end).
-        for t in [tMin, (tMin + tMax) / 2, tMax] {
-            let str = self.dateFormatter.string(from: Date(timeIntervalSince1970: t)) as NSString
-            let size = str.size(withAttributes: labelAttrs)
-            let lx = max(chartRect.minX, min(xFor(t) - size.width / 2, self.bounds.width - size.width))
-            str.draw(at: CGPoint(x: lx, y: 0), withAttributes: labelAttrs)
+        let span = tMax - tMin
+        let day: Double = 86400
+        let minorInterval: Double
+        let majorInterval: Double
+
+        if span <= 35 * day {
+            minorInterval = day
+            majorInterval = 10 * day
+        } else if span <= 185 * day {
+            minorInterval = 5 * day
+            majorInterval = 30 * day
+        } else if span <= 370 * day {
+            minorInterval = 30 * day
+            majorInterval = 90 * day
+        } else {
+            let totalDays = span / day
+            if totalDays <= 730 {
+                minorInterval = 30 * day
+                majorInterval = 180 * day
+            } else {
+                minorInterval = 180 * day
+                majorInterval = 365 * day
+            }
+        }
+
+        // Vertical grid lines: Major and Minor.
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date(timeIntervalSince1970: tMax)).timeIntervalSince1970
+        var t = startOfToday
+        while t >= tMin {
+            let daysAgo = Int(round((startOfToday - t) / 86400))
+            
+            let majorDays = Int(round(majorInterval / 86400))
+            let minorDays = Int(round(minorInterval / 86400))
+            
+            let isMajor = daysAgo % majorDays == 0
+            let isMinor = daysAgo % minorDays == 0
+
+            let x = xFor(t)
+            if x >= chartRect.minX && x <= chartRect.maxX {
+                if isMajor || isMinor {
+                    let line = NSBezierPath()
+                    line.move(to: CGPoint(x: x, y: chartRect.minY))
+                    line.line(to: CGPoint(x: x, y: chartRect.maxY))
+                    line.lineWidth = hairline
+
+                    if isMajor {
+                        (self.darkMode ? NSColor.white : NSColor.black).withAlphaComponent(0.08).setStroke()
+                        line.stroke()
+
+                        let str = self.axisFormatter.string(from: Date(timeIntervalSince1970: t)) as NSString
+                        let size = str.size(withAttributes: labelAttrs)
+                        let lx = max(chartRect.minX, min(x - size.width / 2, self.bounds.width - size.width))
+                        str.draw(at: CGPoint(x: lx, y: 0), withAttributes: labelAttrs)
+                    } else {
+                        (self.darkMode ? NSColor.white : NSColor.black).withAlphaComponent(0.03).setStroke()
+                        line.stroke()
+                    }
+                }
+            }
+            t -= 86400
         }
 
         // One line per series.
+        self.projected.removeAll()
         for s in self.series {
             let pts = s.points.sorted { $0.ts < $1.ts }
             s.color.setStroke()
             s.color.setFill()
+
+            for p in pts {
+                self.projected.append(Projected(
+                    point: CGPoint(x: xFor(p.ts.timeIntervalSince1970), y: yFor(p.value)),
+                    value: p.value,
+                    date: p.ts,
+                    name: s.name,
+                    color: s.color
+                ))
+            }
+
             if pts.count == 1 {
                 let p = CGPoint(x: xFor(pts[0].ts.timeIntervalSince1970), y: yFor(pts[0].value))
                 NSBezierPath(ovalIn: CGRect(x: p.x - 1.5, y: p.y - 1.5, width: 3, height: 3)).fill()
@@ -381,5 +611,65 @@ private final class iOSBatteryMultiLineChart: NSView {
             name.draw(at: CGPoint(x: lx, y: legendY + (legendHeight - size.height) / 2), withAttributes: legendAttrs)
             lx += size.width + 12
         }
+
+        self.drawHoverTooltip(chartRect: chartRect, textColor: textColor)
+    }
+
+    private func drawHoverTooltip(chartRect: NSRect, textColor: NSColor) {
+        guard let loc = self.hoverLocation else { return }
+
+        // Find nearest projected point to the cursor (weighting X coordinate heavier so hover feels natural).
+        var nearestPoint: Projected?
+        var bestDist = CGFloat.greatestFiniteMagnitude
+        for p in self.projected {
+            let dx = p.point.x - loc.x
+            let dy = p.point.y - loc.y
+            let dist = dx * dx * 2 + dy * dy
+            if dist < bestDist {
+                bestDist = dist
+                nearestPoint = p
+            }
+        }
+
+        guard let hit = nearestPoint, abs(hit.point.x - loc.x) < 40 else { return }
+
+        // Draw a highlighted dot on the hovered point
+        hit.color.setFill()
+        NSBezierPath(ovalIn: CGRect(x: hit.point.x - 2.5, y: hit.point.y - 2.5, width: 5, height: 5)).fill()
+        NSColor.white.withAlphaComponent(0.8).setStroke()
+        let ring = NSBezierPath(ovalIn: CGRect(x: hit.point.x - 2.5, y: hit.point.y - 2.5, width: 5, height: 5))
+        ring.lineWidth = 1
+        ring.stroke()
+
+        let formattedVal = self.yFormatter(hit.value)
+        let formattedDate = self.tooltipFormatter.string(from: hit.date)
+        let text = "\(hit.name) · \(formattedVal) · \(formattedDate)"
+        self.drawTooltipBox(text, anchorX: hit.point.x, anchorY: hit.point.y, textColor: textColor)
+    }
+
+    private func drawTooltipBox(_ text: String, anchorX: CGFloat, anchorY: CGFloat, textColor: NSColor) {
+        let ns = text as NSString
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .regular),
+            .foregroundColor: textColor
+        ]
+        let textSize = ns.size(withAttributes: attrs)
+        let padding: CGFloat = 5
+        let boxW = textSize.width + padding * 2
+        let boxH = textSize.height + padding
+        var boxX = anchorX + 8
+        if boxX + boxW > self.bounds.width { boxX = anchorX - 8 - boxW }
+        var boxY = anchorY + 8
+        if boxY + boxH > self.bounds.height { boxY = anchorY - 8 - boxH }
+        boxX = max(0, boxX)
+        boxY = max(0, boxY)
+
+        let box = NSBezierPath(roundedRect: NSRect(x: boxX, y: boxY, width: boxW, height: boxH), xRadius: 4, yRadius: 4)
+        (self.darkMode ? NSColor.black : NSColor.white).withAlphaComponent(0.9).setFill()
+        box.fill()
+        NSColor.separatorColor.setStroke()
+        box.lineWidth = 1 / (NSScreen.main?.backingScaleFactor ?? 1)
+        box.stroke()
+        ns.draw(at: CGPoint(x: boxX + padding, y: boxY + padding / 2), withAttributes: attrs)
     }
 }

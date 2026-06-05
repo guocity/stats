@@ -262,7 +262,14 @@ internal enum IOBatteryPy {
         case let n as NSNumber where CFGetTypeID(n) == CFBooleanGetTypeID(): return n.boolValue
         case let i as Int: return i != 0
         case let s as String:
-            switch s.lowercased() { case "true", "yes", "1": return true; case "false", "no", "0": return false; default: return nil }
+            switch s.lowercased() {
+            case "true", "yes", "1":
+                return true
+            case "false", "no", "0":
+                return false
+            default:
+                return nil
+            }
         default: return nil
         }
     }
