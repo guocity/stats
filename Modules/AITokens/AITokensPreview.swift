@@ -212,11 +212,86 @@ internal final class AITokensPreview: PreviewWrapper {
 
 // MARK: - Per-provider summary (current usage / reset / updated per window)
 
+private final class ClickableRow: NSStackView {
+    var onClick: (() -> Void)?
+    var isHovered: Bool = false {
+        didSet {
+            self.needsDisplay = true
+        }
+    }
+    var isSelected: Bool = false {
+        didSet {
+            self.needsDisplay = true
+        }
+    }
+
+    private var trackingArea: NSTrackingArea?
+
+    init() {
+        super.init(frame: .zero)
+        self.wantsLayer = true
+        self.edgeInsets = NSEdgeInsets(top: 4, left: 6, bottom: 4, right: 6)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = self.trackingArea { self.removeTrackingArea(existing) }
+        let area = NSTrackingArea(
+            rect: self.bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .cursorUpdate],
+            owner: self,
+            userInfo: nil
+        )
+        self.addTrackingArea(area)
+        self.trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.pointingHand.set()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        onClick?()
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        super.updateLayer()
+        let color: NSColor
+        if isSelected {
+            color = NSColor.textColor.withAlphaComponent(0.08)
+        } else if isHovered {
+            color = NSColor.textColor.withAlphaComponent(0.04)
+        } else {
+            color = .clear
+        }
+        self.layer?.backgroundColor = color.cgColor
+        self.layer?.cornerRadius = 4
+    }
+}
+
 private final class AITokensSummaryPanel {
     private(set) var section: NSView
+    private let provider: AITokens_Provider
     private var windowFields: [String: (used: NSTextField, reset: NSTextField, updated: NSTextField)] = [:]
+    private var windowRows: [String: ClickableRow] = [:]
 
-    init(provider: AITokens_Provider) {
+    init(provider: AITokens_Provider, onWindowClicked: @escaping (String, String) -> Void) {
+        self.provider = provider
         let container = NSStackView()
         container.orientation = .vertical
         container.spacing = 6
@@ -228,10 +303,16 @@ private final class AITokensSummaryPanel {
 
         for (index, window) in provider.windows.enumerated() where !window.isStale {
             let color = provider.color(forWindowIndex: index)
-            let row = NSStackView()
+            let row = ClickableRow()
             row.orientation = .horizontal
             row.spacing = 8
             row.alignment = .centerY
+            
+            let providerId = provider.id
+            let windowName = window.name
+            row.onClick = {
+                onWindowClicked(providerId, windowName)
+            }
 
             let swatch = ColorView(frame: NSRect(x: 0, y: 0, width: 8, height: 8), color: color, state: true, radius: 4)
             swatch.widthAnchor.constraint(equalToConstant: 8).isActive = true
@@ -261,6 +342,7 @@ private final class AITokensSummaryPanel {
             container.addArrangedSubview(row)
 
             self.windowFields[window.name] = (usedField, resetField, updatedField)
+            self.windowRows[window.name] = row
         }
 
         self.section = PreferencesSection(title: provider.name, [container])
@@ -276,6 +358,19 @@ private final class AITokensSummaryPanel {
                 fields.reset.stringValue = "\(localizedString("inactive")) · \(localizedString("last seen")) \(aiTokensRelativeAge(latest.capturedAt, from: now))"
             }
             fields.updated.stringValue = aiTokensRelativeAge(latest.capturedAt, from: now)
+        }
+    }
+
+    func updateSelection(selectedKey: (providerId: String, windowName: String)?) {
+        for (windowName, row) in windowRows {
+            if let key = selectedKey {
+                let isThis = key.providerId == provider.id && key.windowName == windowName
+                row.isSelected = isThis
+                row.alphaValue = isThis ? 1.0 : 0.4
+            } else {
+                row.isSelected = false
+                row.alphaValue = 1.0
+            }
         }
     }
 }
@@ -297,6 +392,7 @@ private final class AITokensMultiLineChart: NSView {
         /// Window length — longer windows (weekly/monthly) get more widely-spaced reset dots.
         let windowMinutes: Int
         let windowName: String
+        let providerId: String
     }
 
     /// A projected sample, cached each draw so hover can hit-test against on-screen points.
@@ -306,6 +402,8 @@ private final class AITokensMultiLineChart: NSView {
         let date: Date
         let name: String
         let color: NSColor
+        let providerId: String
+        let windowName: String
     }
 
     /// A reset marker line, cached each draw so hover can show its date.
@@ -314,6 +412,8 @@ private final class AITokensMultiLineChart: NSView {
         let date: Date
         let label: String
         let color: NSColor
+        let providerId: String
+        let windowName: String
     }
 
     private var series: [Series] = []
@@ -324,6 +424,17 @@ private final class AITokensMultiLineChart: NSView {
     private let axisFormatter = DateFormatter()
     private let markerFormatter = DateFormatter()
     private let tooltipFormatter = DateFormatter()
+
+    private var highlightedSeriesKey: (providerId: String, windowName: String)?
+
+    func setHighlightedSeries(providerId: String?, windowName: String?) {
+        if let providerId = providerId, let windowName = windowName {
+            highlightedSeriesKey = (providerId, windowName)
+        } else {
+            highlightedSeriesKey = nil
+        }
+        self.needsDisplay = true
+    }
 
     // MARK: - Viewport: the single source of truth (unix seconds)
 
@@ -676,12 +787,12 @@ private final class AITokensMultiLineChart: NSView {
 
         let yAxisWidth: CGFloat = 34
         let xAxisHeight: CGFloat = 13
-        let legendHeight: CGFloat = 13
+        let topMargin: CGFloat = 4
         let chartRect = NSRect(
             x: yAxisWidth,
             y: xAxisHeight,
             width: max(1, self.bounds.width - yAxisWidth - 4),
-            height: max(1, self.bounds.height - xAxisHeight - legendHeight - 2)
+            height: max(1, self.bounds.height - xAxisHeight - topMargin - 2)
         )
 
         let yMax = max(1, self.fixedYMax ?? (self.series.flatMap { $0.points.map { $0.value } }.max() ?? 1))
@@ -753,9 +864,12 @@ private final class AITokensMultiLineChart: NSView {
             line.move(to: CGPoint(x: x, y: chartRect.minY))
             line.line(to: CGPoint(x: x, y: chartRect.maxY))
             line.lineWidth = hairline
-            reset.color.withAlphaComponent(0.35).setStroke()
+            
+            let isHighlighted = self.highlightedSeriesKey == nil || (self.highlightedSeriesKey?.providerId == reset.providerId && self.highlightedSeriesKey?.windowName == reset.windowName)
+            let opacity: CGFloat = isHighlighted ? 0.35 : 0.05
+            reset.color.withAlphaComponent(opacity).setStroke()
             line.stroke()
-            self.resetMarkers.append(ResetMarker(x: x, date: reset.date, label: localizedString("Past reset"), color: reset.color))
+            self.resetMarkers.append(ResetMarker(x: x, date: reset.date, label: localizedString("Past reset"), color: reset.color, providerId: reset.providerId, windowName: reset.windowName))
         }
 
         // Upcoming-reset markers: a dotted vertical line per window, in its color. The dots are spaced
@@ -775,10 +889,13 @@ private final class AITokensMultiLineChart: NSView {
             line.lineWidth = max(hairline, 1)
             let dash: [CGFloat] = s.windowMinutes >= 1440 ? [2, 9] : [1, 3]   // ≥1 day → spaced dots; session → many dots
             line.setLineDash(dash, count: 2, phase: 0)
-            s.color.withAlphaComponent(0.9).setStroke()
+            
+            let isHighlighted = self.highlightedSeriesKey == nil || (self.highlightedSeriesKey?.providerId == s.providerId && self.highlightedSeriesKey?.windowName == s.windowName)
+            let opacity: CGFloat = isHighlighted ? 0.9 : 0.1
+            s.color.withAlphaComponent(opacity).setStroke()
             line.stroke()
-            self.drawVerticalLabel(self.markerFormatter.string(from: reset), atX: x, chartRect: chartRect, color: s.color, font: labelFont)
-            self.resetMarkers.append(ResetMarker(x: x, date: reset, label: "\(s.name) \(localizedString("resets"))", color: s.color))
+            self.drawVerticalLabel(self.markerFormatter.string(from: reset), atX: x, chartRect: chartRect, color: s.color.withAlphaComponent(opacity), font: labelFont)
+            self.resetMarkers.append(ResetMarker(x: x, date: reset, label: "\(s.name) \(localizedString("resets"))", color: s.color, providerId: s.providerId, windowName: s.windowName))
         }
 
         // "Now" marker: a dotted red vertical line (no label).
@@ -794,12 +911,18 @@ private final class AITokensMultiLineChart: NSView {
         self.projected.removeAll()
         for s in self.series {
             let pts = s.points.sorted { $0.ts < $1.ts }
-            s.color.setStroke()
-            s.color.setFill()
+            
+            let isHighlighted = self.highlightedSeriesKey == nil || (self.highlightedSeriesKey?.providerId == s.providerId && self.highlightedSeriesKey?.windowName == s.windowName)
+            let opacity: CGFloat = isHighlighted ? 1.0 : 0.15
+            
+            let strokeColor = s.color.withAlphaComponent(opacity)
+            strokeColor.setStroke()
+            strokeColor.setFill()
             for p in pts {
                 self.projected.append(Projected(
                     point: CGPoint(x: xFor(p.ts.timeIntervalSince1970), y: yFor(p.value)),
-                    value: p.value, date: p.ts, name: s.name, color: s.color
+                    value: p.value, date: p.ts, name: s.name, color: s.color,
+                    providerId: s.providerId, windowName: s.windowName
                 ))
             }
             if pts.count == 1 {
@@ -820,22 +943,6 @@ private final class AITokensMultiLineChart: NSView {
 
         NSGraphicsContext.restoreGraphicsState()   // end plot clip
 
-        // Legend: color swatch + series name, left to right, until we run out of width.
-        let legendAttrs: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: textColor.withAlphaComponent(0.8)]
-        let swatch: CGFloat = 7
-        let legendY = self.bounds.height - legendHeight
-        var lx = chartRect.minX
-        for s in self.series {
-            guard lx < self.bounds.width - 24 else { break }
-            s.color.setFill()
-            NSBezierPath(roundedRect: NSRect(x: lx, y: legendY + (legendHeight - swatch) / 2, width: swatch, height: swatch), xRadius: 1.5, yRadius: 1.5).fill()
-            lx += swatch + 4
-            let name = s.name as NSString
-            let size = name.size(withAttributes: legendAttrs)
-            name.draw(at: CGPoint(x: lx, y: legendY + (legendHeight - size.height) / 2), withAttributes: legendAttrs)
-            lx += size.width + 12
-        }
-
         self.drawHoverTooltip(chartRect: chartRect, textColor: textColor)
     }
 
@@ -847,6 +954,11 @@ private final class AITokensMultiLineChart: NSView {
         var nearestPoint: Projected?
         var bestDist = CGFloat.greatestFiniteMagnitude
         for p in self.projected {
+            if let highlighted = self.highlightedSeriesKey {
+                if p.providerId != highlighted.providerId || p.windowName != highlighted.windowName {
+                    continue
+                }
+            }
             let dx = p.point.x - loc.x
             let dy = p.point.y - loc.y
             let dist = dx * dx * 2 + dy * dy
@@ -858,6 +970,11 @@ private final class AITokensMultiLineChart: NSView {
         var nearestMarker: ResetMarker?
         var markerDX = CGFloat.greatestFiniteMagnitude
         for m in self.resetMarkers {
+            if let highlighted = self.highlightedSeriesKey {
+                if m.providerId != highlighted.providerId || m.windowName != highlighted.windowName {
+                    continue
+                }
+            }
             let dx = abs(m.x - loc.x)
             if dx < markerDX { markerDX = dx; nearestMarker = m }
         }
