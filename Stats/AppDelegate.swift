@@ -22,7 +22,7 @@ import Bluetooth
 import Clock
 // iOSBattery and AITokens modules are built into the app target
 
-let updater = Updater(github: "exelban/stats", url: "https://api.mac-stats.com/release/latest")
+let updater = Updater(github: "guocity/stats", url: "https://api.github.com/repos/guocity/stats/releases/latest")
 var modules: [Module] = [
     CPU(),
     GPU(),

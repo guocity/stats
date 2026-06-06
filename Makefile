@@ -10,6 +10,15 @@ ZIP_PATH = "$(BUILD_PATH)/$(APP).zip"
 
 build: clean next-version archive notarize sign prepare-dmg prepare-dSYM open
 
+next-patch-version:
+	@python3 Scripts/increment_version.py
+
+release: next-patch-version build
+	@versionNumber=$$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$(PWD)/build/Stats.app/Contents/Info.plist") ;\
+	echo "Publishing release v$$versionNumber to guocity/stats..." ;\
+	gh release create "v$$versionNumber" $(PWD)/Stats.dmg --repo guocity/stats --title "v$$versionNumber" --notes "Release v$$versionNumber"
+
+
 # --- MAIN WORLFLOW FUNCTIONS --- #
 
 archive: clean
