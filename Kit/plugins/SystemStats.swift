@@ -28,7 +28,10 @@ public class SystemStats {
     public static let shared = SystemStats()
     static public var host = URL(string: "https://api.system-stats.com")!
     static public var authHost = URL(string: "https://oauth.system-stats.com")!
-    static public var brokerHost = URL(string: "wss://broker.system-stats.com:8084/mqtt")!
+    static public var brokerHost: URL {
+        let custom = Store.shared.string(key: "mqtt_custom_broker_host", defaultValue: "wss://mqtt.lgnat.com/mqtt")
+        return URL(string: custom) ?? URL(string: "wss://mqtt.lgnat.com/mqtt")!
+    }
     static public var appHost = URL(string: "https://app.system-stats.com")!
     
     public var monitoring: Bool {
@@ -53,6 +56,21 @@ public class SystemStats {
             } else if !self.monitoring {
                 self.stop()
             }
+        }
+    }
+    public var customBrokerHost: String {
+        get { Store.shared.string(key: "mqtt_custom_broker_host", defaultValue: "wss://mqtt.lgnat.com/mqtt") }
+        set { Store.shared.set(key: "mqtt_custom_broker_host", value: newValue) }
+    }
+    public var customToken: String {
+        get {
+            let token = RemoteKeychain.readSync("mqtt_custom_token") ?? ""
+            if !token.isEmpty { return token }
+            return Store.shared.string(key: "mqtt_custom_token", defaultValue: "")
+        }
+        set {
+            RemoteKeychain.writeSync(newValue, for: "mqtt_custom_token")
+            Store.shared.set(key: "mqtt_custom_token", value: newValue)
         }
     }
     public let id: UUID
@@ -165,6 +183,8 @@ public class SystemStats {
     public func logout() {
         self.mqtt.disconnect()
         self.auth.logout()
+        self.customToken = ""
+        Store.shared.remove("mqtt_custom_broker_host")
         self.isAuthorized = false
         debug("Logout successfully from Stats Remote", log: self.log)
         NotificationCenter.default.post(name: .remoteState, object: nil, userInfo: ["auth": self.isAuthorized])
@@ -184,6 +204,13 @@ public class SystemStats {
     }
     
     public func start() {
+        if !self.customToken.isEmpty {
+            self.isAuthorized = true
+            NotificationCenter.default.post(name: .remoteState, object: nil, userInfo: ["auth": self.isAuthorized])
+            self.mqtt.connect()
+            return
+        }
+        
         self.auth.isAuthorized { [weak self] status in
             guard let self else { return }
             
@@ -844,16 +871,26 @@ class MQTTManager: NSObject {
         guard !self.isConnected && !self.isConnecting else { return }
         self.isConnecting = true
         
+        let proceedToConnect = { [weak self] in
+            guard let self else { return }
+            self.webSocket?.cancel(with: .normalClosure, reason: nil)
+            self.webSocket = self.session?.webSocketTask(with: SystemStats.brokerHost, protocols: ["mqtt"])
+            self.webSocket?.resume()
+            self.receiveMessage()
+            self.isDisconnected = false
+            debug("MQTT WebSocket connecting...", log: self.log)
+        }
+        
+        if !SystemStats.shared.customToken.isEmpty {
+            proceedToConnect()
+            return
+        }
+        
         SystemStats.shared.auth.isAuthorized { [weak self] status in
             guard let self else { return }
             
             if status {
-                self.webSocket?.cancel(with: .normalClosure, reason: nil)
-                self.webSocket = self.session?.webSocketTask(with: SystemStats.brokerHost, protocols: ["mqtt"])
-                self.webSocket?.resume()
-                self.receiveMessage()
-                self.isDisconnected = false
-                debug("MQTT WebSocket connecting...", log: self.log)
+                proceedToConnect()
             } else {
                 self.isConnecting = false
                 if SystemStats.shared.isAuthorized {
@@ -917,7 +954,8 @@ class MQTTManager: NSObject {
     }
     
     private func sendConnect() {
-        let connectPacket = createConnectPacket(username: SystemStats.shared.id.uuidString, password: SystemStats.shared.auth.accessToken)
+        let password = !SystemStats.shared.customToken.isEmpty ? SystemStats.shared.customToken : SystemStats.shared.auth.accessToken
+        let connectPacket = createConnectPacket(username: SystemStats.shared.id.uuidString, password: password)
         self.webSocket?.send(.data(connectPacket)) { error in
             if let error = error {
                 print("Error sending MQTT CONNECT: \(error)")
@@ -1257,6 +1295,49 @@ enum RemoteKeychain {
         let attributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var addQuery = query
+            for (k, v) in attributes { addQuery[k] = v }
+            SecItemAdd(addQuery as CFDictionary, nil)
+        }
+    }
+    
+    static func readSync(_ key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecAttrSynchronizable as String: kCFBooleanTrue!
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    
+    static func writeSync(_ value: String, for key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecAttrSynchronizable as String: kCFBooleanTrue!
+        ]
+        
+        if value.isEmpty {
+            SecItemDelete(query as CFDictionary)
+            return
+        }
+        
+        let data = Data(value.utf8)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrSynchronizable as String: kCFBooleanTrue!
         ]
         
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)

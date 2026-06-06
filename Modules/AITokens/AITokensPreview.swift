@@ -18,6 +18,7 @@ internal final class AITokensPreview: PreviewWrapper {
     private let usageChart = AITokensMultiLineChart(fixedYMax: 100) { "\(Int($0.rounded()))%" }
     private var signature: String = ""
     private var lastUsage = AITokens_Usage()
+    private var selectedSeriesKey: (providerId: String, windowName: String)? = nil
 
     private let rangeControl: NSSegmentedControl = {
         let c = NSSegmentedControl(
@@ -90,13 +91,16 @@ internal final class AITokensPreview: PreviewWrapper {
         ]))
 
         for provider in value.providers where provider.enabled && provider.windows.contains(where: { !$0.isStale }) {
-            let panel = AITokensSummaryPanel(provider: provider)
+            let panel = AITokensSummaryPanel(provider: provider) { [weak self] providerId, windowName in
+                self?.rowClicked(providerId: providerId, windowName: windowName)
+            }
             self.summaryPanels[provider.id] = panel
             self.addArrangedSubview(panel.section)
         }
 
         self.addArrangedSubview(NSView())
         self.refresh(value)
+        self.updateRowSelectionStates()
     }
 
     private func refresh(_ value: AITokens_Usage) {
@@ -118,7 +122,8 @@ internal final class AITokensPreview: PreviewWrapper {
                     points: points,
                     upcomingReset: aiTokensUpcomingReset(window, from: now),
                     windowMinutes: window.windowMinutes,
-                    windowName: window.name
+                    windowName: window.name,
+                    providerId: provider.id
                 ))
             }
         }
@@ -132,6 +137,23 @@ internal final class AITokensPreview: PreviewWrapper {
             historicalResets: historical,
             initialPreset: self.selectedRange
         )
+        self.updateRowSelectionStates()
+    }
+
+    private func rowClicked(providerId: String, windowName: String) {
+        if selectedSeriesKey?.providerId == providerId && selectedSeriesKey?.windowName == windowName {
+            selectedSeriesKey = nil
+        } else {
+            selectedSeriesKey = (providerId, windowName)
+        }
+        self.usageChart.setHighlightedSeries(providerId: selectedSeriesKey?.providerId, windowName: selectedSeriesKey?.windowName)
+        self.updateRowSelectionStates()
+    }
+
+    private func updateRowSelectionStates() {
+        for panel in self.summaryPanels.values {
+            panel.updateSelection(selectedKey: self.selectedSeriesKey)
+        }
     }
 
     /// Enables only the ranges the data actually spans; the rest are greyed out. The shortest

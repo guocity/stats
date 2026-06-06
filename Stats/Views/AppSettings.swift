@@ -70,6 +70,8 @@ class ApplicationSettings: NSStackView {
     private var GPUTest: GPUStressTest? = GPUStressTest()
     
     private var planField: NSTextField?
+    private var brokerHostField: NSTextField?
+    private var tokenField: NSTextField?
     
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: Constants.Settings.width, height: Constants.Settings.height))
@@ -148,8 +150,33 @@ class ApplicationSettings: NSStackView {
             state: SystemStats.shared.control
         )
         self.planField = textView(SystemStats.shared.plan?.rawValue.capitalized ?? "Free")
+        
+        let brokerHostField = NSTextField()
+        brokerHostField.isEditable = true
+        brokerHostField.isSelectable = true
+        brokerHostField.bezelStyle = .roundedBezel
+        brokerHostField.placeholderString = "wss://mqtt.lgnat.com/mqtt"
+        brokerHostField.stringValue = SystemStats.shared.customBrokerHost
+        brokerHostField.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        brokerHostField.target = self
+        brokerHostField.action = #selector(self.changeBrokerHost)
+        self.brokerHostField = brokerHostField
+        
+        let tokenField = NSTextField()
+        tokenField.isEditable = true
+        tokenField.isSelectable = true
+        tokenField.bezelStyle = .roundedBezel
+        tokenField.placeholderString = localizedString("Token")
+        tokenField.stringValue = SystemStats.shared.customToken
+        tokenField.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        tokenField.target = self
+        tokenField.action = #selector(self.changeCustomToken)
+        self.tokenField = tokenField
+        
         self.remoteView = PreferencesSection(title: localizedString("System Stats"), [
             PreferencesRow(localizedString("Authorization"), component: buttonView(#selector(self.loginToRemote), text: localizedString("Login"))),
+            PreferencesRow(localizedString("Broker URL"), component: brokerHostField),
+            PreferencesRow(localizedString("Custom Token"), component: tokenField),
             PreferencesRow(localizedString("Identificator"), component: textView(SystemStats.shared.id.uuidString)),
             PreferencesRow(localizedString("Plan"), component: self.planField!),
             PreferencesRow(localizedString("Monitoring"), component: switchView(
@@ -160,11 +187,13 @@ class ApplicationSettings: NSStackView {
             PreferencesRow(component: buttonView(#selector(self.logoutFromRemote), text: localizedString("Logout")))
         ])
         scrollView.stackView.addArrangedSubview(self.remoteView!)
-        self.remoteView?.setRowVisibility(1, newState: false)
-        self.remoteView?.setRowVisibility(2, newState: false)
+        self.remoteView?.setRowVisibility(1, newState: true)
+        self.remoteView?.setRowVisibility(2, newState: true)
         self.remoteView?.setRowVisibility(3, newState: false)
         self.remoteView?.setRowVisibility(4, newState: false)
         self.remoteView?.setRowVisibility(5, newState: false)
+        self.remoteView?.setRowVisibility(6, newState: false)
+        self.remoteView?.setRowVisibility(7, newState: false)
         
         scrollView.stackView.addArrangedSubview(PreferencesSection(title: localizedString("Settings"), [
             PreferencesRow(
@@ -225,6 +254,8 @@ class ApplicationSettings: NSStackView {
         self.remoteControlBtn?.state = SystemStats.shared.control ? .on : .off
         
         self.planField?.stringValue = SystemStats.shared.plan?.rawValue.capitalized ?? "Free"
+        self.brokerHostField?.stringValue = SystemStats.shared.customBrokerHost
+        self.tokenField?.stringValue = SystemStats.shared.customToken
         self.setRemoteSettings(SystemStats.shared.isAuthorized)
         
         var idx = self.updateSelector?.indexOfSelectedItem ?? 0
@@ -477,30 +508,52 @@ class ApplicationSettings: NSStackView {
         self.setRemoteSettings(auth)
     }
     
+    @objc private func changeBrokerHost(_ sender: NSTextField) {
+        SystemStats.shared.customBrokerHost = sender.stringValue
+        if !sender.stringValue.isEmpty && !SystemStats.shared.customToken.isEmpty {
+            SystemStats.shared.start()
+        }
+    }
+    
+    @objc private func changeCustomToken(_ sender: NSTextField) {
+        SystemStats.shared.customToken = sender.stringValue
+        if !sender.stringValue.isEmpty {
+            SystemStats.shared.start()
+        } else {
+            SystemStats.shared.logout()
+        }
+    }
+    
     @objc private func loginToRemote() {
         SystemStats.shared.login()
     }
     
     @objc private func logoutFromRemote() {
         SystemStats.shared.logout()
+        self.brokerHostField?.stringValue = SystemStats.shared.customBrokerHost
+        self.tokenField?.stringValue = SystemStats.shared.customToken
     }
     
     private func setRemoteSettings(_ auth: Bool) {
         DispatchQueue.main.async {
             if auth {
-                self.remoteView?.setRowVisibility(1, newState: true)
-                self.remoteView?.setRowVisibility(2, newState: true)
-                self.remoteView?.setRowVisibility(3, newState: true)
-                self.remoteView?.setRowVisibility(4, newState: true)
-                self.remoteView?.setRowVisibility(5, newState: true)
-                self.remoteView?.setRowVisibility(0, newState: false)
+                self.remoteView?.setRowVisibility(1, newState: true) // Broker URL
+                self.remoteView?.setRowVisibility(2, newState: true) // Custom Token
+                self.remoteView?.setRowVisibility(3, newState: true) // Identificator
+                self.remoteView?.setRowVisibility(4, newState: true) // Plan
+                self.remoteView?.setRowVisibility(5, newState: true) // Monitoring
+                self.remoteView?.setRowVisibility(6, newState: true) // Control
+                self.remoteView?.setRowVisibility(7, newState: true) // Logout button
+                self.remoteView?.setRowVisibility(0, newState: false) // Login button
             } else {
-                self.remoteView?.setRowVisibility(0, newState: true)
-                self.remoteView?.setRowVisibility(1, newState: false)
-                self.remoteView?.setRowVisibility(2, newState: false)
+                self.remoteView?.setRowVisibility(0, newState: true) // Login button
+                self.remoteView?.setRowVisibility(1, newState: true) // Broker URL
+                self.remoteView?.setRowVisibility(2, newState: true) // Custom Token
                 self.remoteView?.setRowVisibility(3, newState: false)
                 self.remoteView?.setRowVisibility(4, newState: false)
                 self.remoteView?.setRowVisibility(5, newState: false)
+                self.remoteView?.setRowVisibility(6, newState: false)
+                self.remoteView?.setRowVisibility(7, newState: false)
             }
         }
     }

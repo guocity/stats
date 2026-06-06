@@ -196,6 +196,8 @@ enum AITokensRange: Int, CaseIterable {
 struct AITokensHistoricalReset {
     let date: Date
     let color: NSColor
+    let providerId: String
+    let windowName: String
 }
 
 /// Distinct *fixed* reset boundaries that already happened (drawn as light, provider-tinted lines).
@@ -222,7 +224,7 @@ func aiTokensHistoricalResets(_ providers: [AITokens_Provider], before now: Date
                 }
             }
             for (_, g) in groups where !(g.count == 1 && g.allRolling) {
-                out.append(AITokensHistoricalReset(date: g.date, color: color))
+                out.append(AITokensHistoricalReset(date: g.date, color: color, providerId: provider.id, windowName: window.name))
             }
         }
     }
