@@ -378,17 +378,53 @@ public extension NSBezierPath {
     }
 }
 
-public func separatorView(_ title: String, origin: NSPoint = NSPoint(x: 0, y: 0), width: CGFloat = 0) -> NSView {
+public func separatorView(_ title: String, origin: NSPoint = NSPoint(x: 0, y: 0), width: CGFloat = 0, rightInset: CGFloat = 0) -> NSView {
     let view: NSView = NSView(frame: NSRect(x: origin.x, y: origin.y, width: width, height: 30))
     view.heightAnchor.constraint(equalToConstant: view.bounds.height).isActive = true
     
-    let labelView: NSTextField = TextView(frame: NSRect(x: 0, y: (view.frame.height-15)/2, width: view.frame.width, height: 15))
-    labelView.stringValue = title
+    let labelView: NSTextField = NSTextField(labelWithString: "")
+    labelView.translatesAutoresizingMaskIntoConstraints = false
     labelView.alignment = .center
-    labelView.textColor = .secondaryLabelColor
-    labelView.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+    labelView.isBezeled = false
+    labelView.isEditable = false
+    labelView.drawsBackground = false
+    labelView.attributedStringValue = NSAttributedString(string: title.uppercased(), attributes: [
+        .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+        .foregroundColor: NSColor.tertiaryLabelColor,
+        .kern: 1.0
+    ])
+    labelView.setContentHuggingPriority(.required, for: .horizontal)
+    labelView.setContentCompressionResistancePriority(.required, for: .horizontal)
     
+    let leftLine: NSView = NSView()
+    leftLine.translatesAutoresizingMaskIntoConstraints = false
+    leftLine.wantsLayer = true
+    leftLine.layer?.backgroundColor = NSColor.separatorColor.cgColor
+    
+    let rightLine: NSView = NSView()
+    rightLine.translatesAutoresizingMaskIntoConstraints = false
+    rightLine.wantsLayer = true
+    rightLine.layer?.backgroundColor = NSColor.separatorColor.cgColor
+    
+    view.addSubview(leftLine)
     view.addSubview(labelView)
+    view.addSubview(rightLine)
+    
+    let gap: CGFloat = 8
+    NSLayoutConstraint.activate([
+        labelView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+        labelView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        
+        leftLine.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+        leftLine.trailingAnchor.constraint(equalTo: labelView.leadingAnchor, constant: -gap),
+        leftLine.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        leftLine.heightAnchor.constraint(equalToConstant: 1),
+        
+        rightLine.leadingAnchor.constraint(equalTo: labelView.trailingAnchor, constant: gap),
+        rightLine.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -rightInset),
+        rightLine.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        rightLine.heightAnchor.constraint(equalToConstant: 1)
+    ])
     
     return view
 }
@@ -757,7 +793,7 @@ public func fetchIOService(_ name: String) -> [NSDictionary]? {
     var obj: io_registry_entry_t = 1
     var list: [NSDictionary] = []
     
-    let result = IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching(name), &iterator)
+    let result = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching(name), &iterator)
     if result != kIOReturnSuccess {
         print("Error IOServiceGetMatchingServices(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
         return nil
@@ -1339,8 +1375,22 @@ public func controlState(_ sender: NSControl) -> Bool {
     return state == .on
 }
 
-public func iconFromSymbol(name: String, scale: NSImage.SymbolScale) -> NSImage {
-    let config = NSImage.SymbolConfiguration(textStyle: .body, scale: scale)
+public enum IconScale {
+    case small, medium, large, xlarge
+}
+
+public func iconFromSymbol(name: String, scale: IconScale) -> NSImage {
+    let config: NSImage.SymbolConfiguration
+    switch scale {
+    case .small:
+        config = NSImage.SymbolConfiguration(textStyle: .body, scale: .small)
+    case .medium:
+        config = NSImage.SymbolConfiguration(textStyle: .body, scale: .medium)
+    case .large:
+        config = NSImage.SymbolConfiguration(textStyle: .body, scale: .large)
+    case .xlarge:
+        config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular, scale: .large)
+    }
     if let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil), let icon = symbol.withSymbolConfiguration(config) {
         return icon
     }
@@ -1366,7 +1416,7 @@ public func showAlert(_ message: String, _ information: String? = nil, _ style: 
 }
 
 var isDarkMode: Bool {
-    switch NSAppearance.current.name {
+    switch NSAppearance.currentDrawing().name {
     case .darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua, .accessibilityHighContrastVibrantDark:
         return true
     default:
@@ -2002,4 +2052,68 @@ public func countryFlag(_ code: String) -> String? {
     guard uppercased.count == 2 else { return nil }
     let scalars = uppercased.unicodeScalars.compactMap { UnicodeScalar(127397 + $0.value) }
     return scalars.count == 2 ? String(String.UnicodeScalarView(scalars)) : nil
+}
+
+public class DotView: NSView {
+    private let size: CGFloat
+    
+    public init(color: NSColor, size: CGFloat = 8) {
+        self.size = size
+        super.init(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        
+        self.translatesAutoresizingMaskIntoConstraints = false
+        self.widthAnchor.constraint(equalToConstant: size).isActive = true
+        
+        let height = self.heightAnchor.constraint(equalToConstant: size)
+        height.priority = .defaultHigh
+        height.isActive = true
+        
+        self.wantsLayer = true
+        self.layer?.cornerRadius = size / 2
+        self.layer?.backgroundColor = color.cgColor
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    public func setColor(_ color: NSColor) {
+        self.layer?.backgroundColor = color.cgColor
+    }
+}
+
+public class LinkButton: NSButton {
+    private var url: URL
+    
+    public init(_ url: URL, size: CGFloat = 14) {
+        self.url = url
+        
+        super.init(frame: .zero)
+        self.target = self
+        self.action = #selector(self.openURL)
+        
+        self.image = NSImage(systemSymbolName: "arrow.up.right.square", accessibilityDescription: localizedString("Open in browser"))
+        self.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+        self.imagePosition = .imageOnly
+        self.isBordered = false
+        self.bezelStyle = .accessoryBar
+        self.contentTintColor = .secondaryLabelColor
+        self.toolTip = url.absoluteString
+        self.translatesAutoresizingMaskIntoConstraints = false
+        
+        self.widthAnchor.constraint(equalToConstant: size).isActive = true
+        self.heightAnchor.constraint(equalToConstant: size).isActive = true
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    @objc private func openURL() {
+        NSWorkspace.shared.open(self.url)
+    }
+    
+    public override func resetCursorRects() {
+        self.addCursorRect(self.bounds, cursor: .pointingHand)
+    }
 }
