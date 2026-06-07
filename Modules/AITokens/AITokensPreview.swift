@@ -930,10 +930,29 @@ private final class AITokensMultiLineChart: NSView {
                 NSBezierPath(ovalIn: CGRect(x: p.x - 1.5, y: p.y - 1.5, width: 3, height: 3)).fill()
                 continue
             }
+            // Reset boundaries for this series (the same vertical lines drawn above). Used to break
+            // the line across a gap that spans a reset: usage held flat up to the reset, then dropped
+            // to zero at the reset and climbing to the next sample — never a slope down through it.
+            var resetTimes = self.historicalResets
+                .filter { $0.providerId == s.providerId && $0.windowName == s.windowName }
+                .map { $0.date.timeIntervalSince1970 }
+            if let up = s.upcomingReset { resetTimes.append(up.timeIntervalSince1970) }
+            resetTimes.sort()
+            let yZero = yFor(0)
+
             let path = NSBezierPath()
             path.move(to: CGPoint(x: xFor(pts[0].ts.timeIntervalSince1970), y: yFor(pts[0].value)))
-            for p in pts.dropFirst() {
-                path.line(to: CGPoint(x: xFor(p.ts.timeIntervalSince1970), y: yFor(p.value)))
+            for i in 1..<pts.count {
+                let a = pts[i - 1], b = pts[i]
+                let aTS = a.ts.timeIntervalSince1970, bTS = b.ts.timeIntervalSince1970
+                if let reset = resetTimes.first(where: { $0 > aTS && $0 < bTS }) {
+                    let rx = xFor(reset)
+                    path.line(to: CGPoint(x: rx, y: yFor(a.value)))   // hold flat until the reset
+                    path.line(to: CGPoint(x: rx, y: yZero))           // drop to zero at the reset
+                    path.line(to: CGPoint(x: xFor(bTS), y: yFor(b.value)))  // climb to the next sample
+                } else {
+                    path.line(to: CGPoint(x: xFor(bTS), y: yFor(b.value)))
+                }
             }
             let isSession = s.windowName.lowercased().contains("session") || s.windowMinutes < 1440
             path.lineWidth = isSession ? hairline : max(hairline, 1)
