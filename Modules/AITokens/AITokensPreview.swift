@@ -345,7 +345,7 @@ private final class AITokensSummaryPanel {
             self.windowRows[window.name] = row
         }
 
-        self.section = PreferencesSection(title: provider.name, [container])
+        self.section = PreferencesSection(title: provider.name, icon: aiTokensProviderIcon(provider.name), [container])
     }
 
     func update(_ provider: AITokens_Provider, now: Date) {

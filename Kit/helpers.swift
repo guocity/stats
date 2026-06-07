@@ -1428,17 +1428,17 @@ public class PreferencesSection: NSStackView {
     private let container: NSStackView = NSStackView()
     private var subtitleField: NSTextField?
 
-    public init(title: String = "", subtitle: String = "", id: String? = nil, _ components: [NSView] = []) {
+    public init(title: String = "", subtitle: String = "", id: String? = nil, icon: NSImage? = nil, _ components: [NSView] = []) {
         super.init(frame: .zero)
-        
+
         self.orientation = .vertical
         self.spacing = 0
         if let id {
             self.identifier = NSUserInterfaceItemIdentifier(id)
         }
-        
+
         if title != "" || subtitle != "" {
-            self.addHeader(title: title, subtitle: subtitle)
+            self.addHeader(title: title, subtitle: subtitle, icon: icon)
         }
         
         self.container.orientation = .vertical
@@ -1467,28 +1467,36 @@ public class PreferencesSection: NSStackView {
         self.container.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.025).cgColor
     }
     
-    private func addHeader(title: String, subtitle: String) {
+    private func addHeader(title: String, subtitle: String, icon: NSImage? = nil) {
         let view = NSStackView()
         view.heightAnchor.constraint(equalToConstant: 26).isActive = true
-        
+
         let space = NSView()
         space.widthAnchor.constraint(equalToConstant: 4).isActive = true
-        
+
         let firstField: NSTextField = TextView()
         firstField.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         firstField.stringValue = title
-        
+
         let secondField: NSTextField = TextView()
         secondField.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         secondField.textColor = .placeholderTextColor
         secondField.stringValue = subtitle
         self.subtitleField = secondField
-        
+
         view.addArrangedSubview(space)
+        if let icon {
+            let imageView = NSImageView()
+            imageView.image = icon
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            imageView.widthAnchor.constraint(equalToConstant: 13).isActive = true
+            imageView.heightAnchor.constraint(equalToConstant: 13).isActive = true
+            view.addArrangedSubview(imageView)
+        }
         view.addArrangedSubview(firstField)
         view.addArrangedSubview(NSView())
         view.addArrangedSubview(secondField)
-        
+
         self.addArrangedSubview(view)
     }
     
