@@ -291,6 +291,7 @@ private final class iOSBatteryDevicePanel {
         self.udid = device.udid ?? ""
 
         self.circle.widthAnchor.constraint(equalToConstant: 90).isActive = true
+        self.circle.heightAnchor.constraint(equalToConstant: 90).isActive = true
         self.circle.toolTip = localizedString("Health")
 
         let name = device.displayName.isEmpty ? localizedString("iOS device") : device.displayName
@@ -313,8 +314,10 @@ private final class iOSBatteryDevicePanel {
         let view = NSStackView()
         view.distribution = .fill
         view.orientation = .horizontal
+        view.alignment = .centerY
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.heightAnchor.constraint(equalToConstant: 90).isActive = true
+        // The pie chart is pinned to a fixed 90x90 (see init); the panel sizes to
+        // its tallest column (the 4 detail rows) so no row gets squished.
         view.edgeInsets = NSEdgeInsets(
             top: Constants.Settings.margin,
             left: Constants.Settings.margin,
