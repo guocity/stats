@@ -69,7 +69,7 @@ internal final class AITokensPopup: PopupWrapper {
         let compact = Store.shared.bool(key: "AITokens_compactPopup", defaultValue: true)
 
         for provider in providers {
-            self.stack.addArrangedSubview(separatorView(provider.name, width: self.contentWidth))
+            self.stack.addArrangedSubview(self.providerHeader(provider.name, width: self.contentWidth))
             for (index, window) in provider.windows.enumerated() where !window.isStale {
                 guard let latest = window.latest else { continue }
                 let remainingFraction: Double
@@ -116,6 +116,76 @@ internal final class AITokensPopup: PopupWrapper {
             }
         }
         self.scheduleHeightUpdate()
+    }
+
+    /// Section header for a provider: its white brand glyph followed by the name,
+    /// flanked by separator lines (matches `separatorView` styling). Falls back to a
+    /// plain separator for providers we don't ship an icon for.
+    private func providerHeader(_ name: String, width: CGFloat) -> NSView {
+        guard let icon = aiTokensProviderIcon(name) else {
+            return separatorView(name, width: width)
+        }
+
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 30))
+        view.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
+        let imageView = NSImageView()
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.image = icon
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+
+        let labelView = NSTextField(labelWithString: "")
+        labelView.translatesAutoresizingMaskIntoConstraints = false
+        labelView.alignment = .center
+        labelView.isBezeled = false
+        labelView.isEditable = false
+        labelView.drawsBackground = false
+        labelView.attributedStringValue = NSAttributedString(string: name.uppercased(), attributes: [
+            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+            .kern: 1.0
+        ])
+        labelView.setContentHuggingPriority(.required, for: .horizontal)
+        labelView.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let leftLine = NSView()
+        leftLine.translatesAutoresizingMaskIntoConstraints = false
+        leftLine.wantsLayer = true
+        leftLine.layer?.backgroundColor = NSColor.separatorColor.cgColor
+
+        let rightLine = NSView()
+        rightLine.translatesAutoresizingMaskIntoConstraints = false
+        rightLine.wantsLayer = true
+        rightLine.layer?.backgroundColor = NSColor.separatorColor.cgColor
+
+        view.addSubview(leftLine)
+        view.addSubview(imageView)
+        view.addSubview(labelView)
+        view.addSubview(rightLine)
+
+        let gap: CGFloat = 8
+        let iconSize: CGFloat = 13
+        NSLayoutConstraint.activate([
+            labelView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            labelView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+
+            imageView.trailingAnchor.constraint(equalTo: labelView.leadingAnchor, constant: -4),
+            imageView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            imageView.widthAnchor.constraint(equalToConstant: iconSize),
+            imageView.heightAnchor.constraint(equalToConstant: iconSize),
+
+            leftLine.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            leftLine.trailingAnchor.constraint(equalTo: imageView.leadingAnchor, constant: -gap),
+            leftLine.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            leftLine.heightAnchor.constraint(equalToConstant: 1),
+
+            rightLine.leadingAnchor.constraint(equalTo: labelView.trailingAnchor, constant: gap),
+            rightLine.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            rightLine.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            rightLine.heightAnchor.constraint(equalToConstant: 1)
+        ])
+
+        return view
     }
 
     private func emptyState(_ message: String) -> NSView {

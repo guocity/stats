@@ -139,6 +139,30 @@ func aiTokensProviderColor(_ id: String) -> NSColor {
     }
 }
 
+/// The provider's brand glyph, tinted white, for use in the popup section header.
+/// Returns nil for providers we don't ship an icon for (they just show their name).
+func aiTokensProviderIcon(_ id: String) -> NSImage? {
+    let asset: String?
+    switch id.lowercased() {
+    case let s where s.contains("claude") || s.contains("anthropic"): asset = "claude"
+    case let s where s.contains("codex") || s.contains("openai") || s.contains("chatgpt"): asset = "codex"
+    default: asset = nil
+    }
+    guard let asset, let base = NSImage(named: asset) else { return nil }
+    return aiTokensTinted(base, color: .white)
+}
+
+/// Tints a template image to a solid color by painting over its alpha mask.
+private func aiTokensTinted(_ image: NSImage, color: NSColor) -> NSImage {
+    guard let tinted = image.copy() as? NSImage else { return image }
+    tinted.lockFocus()
+    color.set()
+    NSRect(origin: .zero, size: tinted.size).fill(using: .sourceAtop)
+    tinted.unlockFocus()
+    tinted.isTemplate = false
+    return tinted
+}
+
 /// The genuine *upcoming* reset for a window. codexbar stores the current window's
 /// `resetsAt`; once that moment has passed (it stopped logging before the reset fired),
 /// roll it forward by whole window lengths so we always point at the next reset.
