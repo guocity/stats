@@ -61,24 +61,21 @@ sign:
 	echo "Stats successfully stapled"
 
 prepare-dmg:
-	if [ ! -d $(PWD)/create-dmg ]; then \
-	    git clone https://github.com/create-dmg/create-dmg; \
-	fi
-
-	./create-dmg/create-dmg \
-	    --volname $(APP) \
-	    --background "./Stats/Supporting Files/background.png" \
-	    --window-pos 200 120 \
-	    --window-size 500 320 \
-	    --icon-size 80 \
-	    --icon "Stats.app" 125 175 \
-	    --hide-extension "Stats.app" \
-	    --app-drop-link 375 175 \
-	    --no-internet-enable \
-	    $(PWD)/$(APP).dmg \
-	    $(APP_PATH)
-
-	rm -rf ./create-dmg
+	echo "Creating disk image..."
+	rm -rf $(BUILD_PATH)/dmg
+	mkdir -p $(BUILD_PATH)/dmg
+	ditto $(APP_PATH) "$(BUILD_PATH)/dmg/$(APP).app"
+	ln -s /Applications $(BUILD_PATH)/dmg/Applications
+	rm -f $(PWD)/$(APP).dmg
+	hdiutil create \
+	    -volname $(APP) \
+	    -srcfolder $(BUILD_PATH)/dmg \
+	    -fs HFS+ \
+	    -format UDZO \
+	    -ov \
+	    $(PWD)/$(APP).dmg
+	rm -rf $(BUILD_PATH)/dmg
+	echo "Created $(PWD)/$(APP).dmg"
 
 prepare-dSYM:
 	echo "Zipping dSYMs..."

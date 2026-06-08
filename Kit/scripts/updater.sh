@@ -30,9 +30,19 @@ launch_app() {
     fi
 }
 
-if [[ "$STEP" == "2" ]]; then
+# Replace the installed app with the one from the mounted DMG.
+# Use `ditto` (not `cp -rf`) so the bundle's symlinks/extended attributes are
+# preserved intact — `cp` can mangle them and break the code signature. Then
+# strip the quarantine flag the DMG inherited from being downloaded, otherwise
+# Gatekeeper reports the freshly-copied app as "damaged and can't be opened".
+install_app() {
     rm -rf "$APP_DST"
-    cp -rf "$APP_SRC" "$APP_DST"
+    /usr/bin/ditto "$APP_SRC" "$APP_DST"
+    /usr/bin/xattr -dr com.apple.quarantine "$APP_DST" 2>/dev/null || true
+}
+
+if [[ "$STEP" == "2" ]]; then
+    install_app
 
     launch_app "$APP_DST/Contents/MacOS/Stats" --dmg "$DMG_PATH"
 
@@ -44,8 +54,7 @@ elif [[ "$STEP" == "3" ]]; then
 
     echo "Done"
 else
-    rm -rf "$APP_DST"
-    cp -rf "$APP_SRC" "$APP_DST"
+    install_app
 
     launch_app "$APP_DST/Contents/MacOS/Stats" --dmg-path "$DMG_PATH" --mount-path "$MOUNT_PATH"
 

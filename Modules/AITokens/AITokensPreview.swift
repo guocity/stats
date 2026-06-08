@@ -693,8 +693,15 @@ private final class AITokensMultiLineChart: NSView {
             }
             if self.isScrollingHorizontal {
                 if event.scrollingDeltaX != 0 {
-                    // The OS feeds both active and momentum deltas — apply each directly.
-                    self.panBy(event.scrollingDeltaX)
+                    // Apply scroll acceleration for fast swipes, but keep slow swipes 1:1.
+                    let dx = event.scrollingDeltaX
+                    let absDx = abs(dx)
+                    let threshold: CGFloat = 2.0
+                    var multiplier: CGFloat = 1.0
+                    if absDx > threshold {
+                        multiplier = min(10.0, 1.0 + (absDx - threshold) * 0.25)
+                    }
+                    self.panBy(dx * multiplier)
                 }
                 if event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .ended {
                     self.isScrollingHorizontal = false
@@ -859,7 +866,6 @@ private final class AITokensMultiLineChart: NSView {
             let ts = reset.date.timeIntervalSince1970
             guard ts >= tMin, ts <= tMax else { continue }
             let x = xFor(ts)
-            if abs(x - nowX) < 20 { continue }
             let line = NSBezierPath()
             line.move(to: CGPoint(x: x, y: chartRect.minY))
             line.line(to: CGPoint(x: x, y: chartRect.maxY))
@@ -882,7 +888,6 @@ private final class AITokensMultiLineChart: NSView {
             let minuteKey = Int(ts / 60)
             guard drawnResetMinutes.insert(minuteKey).inserted else { continue }
             let x = xFor(ts)
-            if abs(x - nowX) < 20 { continue }
             let line = NSBezierPath()
             line.move(to: CGPoint(x: x, y: chartRect.minY))
             line.line(to: CGPoint(x: x, y: chartRect.maxY))
@@ -894,7 +899,10 @@ private final class AITokensMultiLineChart: NSView {
             let opacity: CGFloat = isHighlighted ? 0.9 : 0.1
             s.color.withAlphaComponent(opacity).setStroke()
             line.stroke()
-            self.drawVerticalLabel(self.markerFormatter.string(from: reset), atX: x, chartRect: chartRect, color: s.color.withAlphaComponent(opacity), font: labelFont)
+            
+            if abs(x - nowX) >= 10 {
+                self.drawVerticalLabel(self.markerFormatter.string(from: reset), atX: x, chartRect: chartRect, color: s.color.withAlphaComponent(opacity), font: labelFont)
+            }
             self.resetMarkers.append(ResetMarker(x: x, date: reset, label: "\(s.name) \(localizedString("resets"))", color: s.color, providerId: s.providerId, windowName: s.windowName))
         }
 
