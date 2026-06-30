@@ -58,6 +58,7 @@ class ApplicationSettings: NSStackView {
     private var updateSelector: NSPopUpButton?
     private var startAtLoginBtn: NSSwitch?
     private var remoteControlBtn: NSSwitch?
+    private var remoteUpdatesBtn: NSSwitch?
     
     private var combinedModulesView: PreferencesSection?
     private var fanHelperView: PreferencesSection?
@@ -155,6 +156,10 @@ class ApplicationSettings: NSStackView {
             action: #selector(self.toggleRemoteControlState),
             state: SystemStats.shared.control
         )
+        self.remoteUpdatesBtn = switchView(
+            action: #selector(self.toggleRemoteUpdateState),
+            state: SystemStats.shared.update
+        )
         self.planField = textView(SystemStats.shared.plan?.rawValue.capitalized ?? "Free")
         
         let brokerHostField = NSTextField()
@@ -190,6 +195,7 @@ class ApplicationSettings: NSStackView {
                 state: SystemStats.shared.monitoring
             )),
             PreferencesRow(localizedString("Control"), component: self.remoteControlBtn!),
+            PreferencesRow(localizedString("Update"), component: self.remoteUpdatesBtn!),
             PreferencesRow(component: buttonView(#selector(self.logoutFromRemote), text: localizedString("Logout")))
         ])
         scrollView.stackView.addArrangedSubview(self.remoteView!)
@@ -200,6 +206,7 @@ class ApplicationSettings: NSStackView {
         self.remoteView?.setRowVisibility(5, newState: false)
         self.remoteView?.setRowVisibility(6, newState: false)
         self.remoteView?.setRowVisibility(7, newState: false)
+        self.remoteView?.setRowVisibility(8, newState: false)
         
         scrollView.stackView.addArrangedSubview(PreferencesSection(title: localizedString("Settings"), [
             PreferencesRow(
@@ -241,7 +248,10 @@ class ApplicationSettings: NSStackView {
         if self.GPUTest != nil {
             tests.append(PreferencesRow(localizedString("GPU"), component: GPUButton))
         }
+        
+        #if arch(arm64)
         scrollView.stackView.addArrangedSubview(PreferencesSection(title: localizedString("Stress tests"), tests))
+        #endif
         
         NotificationCenter.default.addObserver(self, selector: #selector(self.toggleUninstallHelperButton), name: .fanHelperState, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.handleRemoteState), name: .remoteState, object: nil)
@@ -387,6 +397,7 @@ class ApplicationSettings: NSStackView {
         self.combinedModulesView?.setRowVisibility(3, newState: self.combinedModulesState)
         self.combinedModulesView?.setRowVisibility(4, newState: self.combinedModulesState)
         self.combinedModulesView?.setRowVisibility(5, newState: self.combinedModulesState)
+        self.combinedModulesView?.setRowVisibility(6, newState: self.combinedModulesState)
         NotificationCenter.default.post(name: .toggleOneView, object: nil, userInfo: nil)
     }
     
@@ -512,6 +523,9 @@ class ApplicationSettings: NSStackView {
             SystemStats.shared.control = false
         }
     }
+    @objc private func toggleRemoteUpdateState(_ sender: NSButton) {
+        SystemStats.shared.update = sender.state == NSControl.StateValue.on
+    }
     
     @objc private func handleRemoteState(_ notification: Notification) {
         guard let auth = notification.userInfo?["auth"] as? Bool else { return }
@@ -553,7 +567,8 @@ class ApplicationSettings: NSStackView {
                 self.remoteView?.setRowVisibility(4, newState: true) // Plan
                 self.remoteView?.setRowVisibility(5, newState: true) // Monitoring
                 self.remoteView?.setRowVisibility(6, newState: true) // Control
-                self.remoteView?.setRowVisibility(7, newState: true) // Logout button
+                self.remoteView?.setRowVisibility(7, newState: true) // Update
+                self.remoteView?.setRowVisibility(8, newState: true) // Logout button
                 self.remoteView?.setRowVisibility(0, newState: false) // Login button
             } else {
                 self.remoteView?.setRowVisibility(0, newState: true) // Login button
@@ -564,6 +579,7 @@ class ApplicationSettings: NSStackView {
                 self.remoteView?.setRowVisibility(5, newState: false)
                 self.remoteView?.setRowVisibility(6, newState: false)
                 self.remoteView?.setRowVisibility(7, newState: false)
+                self.remoteView?.setRowVisibility(8, newState: false)
             }
         }
     }

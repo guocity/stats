@@ -178,6 +178,9 @@ public struct Disk_process: Process_p, Codable {
     public var base: DataSizeBase {
         DataSizeBase(rawValue: Store.shared.string(key: "\(ModuleType.disk.stringValue)_base", defaultValue: "byte")) ?? .byte
     }
+    public var speedUnit: String {
+        networkSpeedUnit(from: Store.shared.string(key: "\(ModuleType.disk.stringValue)_speedUnit", defaultValue: NetworkSpeedUnitAuto)).key
+    }
     
     public var pid: Int
     public var name: String
@@ -224,6 +227,10 @@ public class Disk: Module {
     
     private var systemWidgetsUpdatesState: Bool {
         self.userDefaults?.bool(forKey: "systemWidgetsUpdates_state") ?? false
+    }
+    
+    private var mainColor: NSColor {
+        SColor.fromString(Store.shared.string(key: "\(self.name)_mainColor", defaultValue: SColor.secondBlue.key)).additional as! NSColor
     }
     
     public init() {
@@ -299,7 +306,7 @@ public class Disk: Module {
                 widget.setValue((DiskSize(d.free).getReadableMemory(), DiskSize(d.size - d.free).getReadableMemory()), usedPercentage: d.percentage)
             case let widget as PieChart:
                 widget.setValue([
-                    ColorValue(d.percentage, color: NSColor.systemBlue)
+                    ColorValue(d.percentage, color: self.mainColor)
                 ])
             case let widget as TextWidget:
                 var text = "\(self.textValue)"

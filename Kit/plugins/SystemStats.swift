@@ -40,8 +40,8 @@ public class SystemStats {
             Store.shared.set(key: "remote_monitoring", value: newValue)
             if newValue {
                 self.start()
-                self.registerDevice()
-            } else if !self.control {
+                self.registerDevice(omitCooldown: true)
+            } else if !self.control && !self.update {
                 self.stop()
             }
         }
@@ -52,8 +52,20 @@ public class SystemStats {
             Store.shared.set(key: "remote_control", value: newValue)
             if newValue {
                 self.start()
-                self.registerDevice()
-            } else if !self.monitoring {
+                self.registerDevice(omitCooldown: true)
+            } else if !self.monitoring && !self.update {
+                self.stop()
+            }
+        }
+    }
+    public var update: Bool {
+        get { Store.shared.bool(key: "remote_update", defaultValue: false) }
+        set {
+            Store.shared.set(key: "remote_update", value: newValue)
+            if newValue {
+                self.start()
+                self.registerDevice(omitCooldown: true)
+            } else if !self.monitoring && !self.control {
                 self.stop()
             }
         }
@@ -99,6 +111,7 @@ public class SystemStats {
     struct Client: Codable {
         let version: String
         let control: Bool
+        let update: Bool
     }
     
     struct OS: Codable {
@@ -232,11 +245,11 @@ public class SystemStats {
         self.mqtt.disconnect()
     }
     
-    private func registerDevice() {
+    private func registerDevice(omitCooldown: Bool = false) {
         let oneHour: TimeInterval = 3600
         let now = Date()
         self.cooldownLock.lock()
-        if let lastTime = self.lastRegisterTime, now.timeIntervalSince(lastTime) < oneHour {
+        if let lastTime = self.lastRegisterTime, !omitCooldown && now.timeIntervalSince(lastTime) < oneHour {
             self.cooldownLock.unlock()
             debug("Device registration skipped: cooldown period not met", log: self.log)
             return
@@ -244,7 +257,7 @@ public class SystemStats {
         self.lastRegisterTime = now
         self.cooldownLock.unlock()
         
-        guard let url = URL(string: "\(SystemStats.host)/remote/device") else { return }
+        guard let url = URL(string: "\(SystemStats.host)/v1/machine") else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -261,7 +274,8 @@ public class SystemStats {
             details: SystemStats.Details(
                 client: Client(
                     version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown",
-                    control: SystemStats.shared.control
+                    control: SystemStats.shared.control,
+                    update: SystemStats.shared.update,
                 ),
                 system: SystemStats.System(
                     platform: "macOS",
@@ -300,7 +314,7 @@ public class SystemStats {
     }
     
     private func fetchAccount() {
-        guard let url = URL(string: "\(SystemStats.host)/account") else { return }
+        guard let url = URL(string: "\(SystemStats.host)/v1/account") else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -325,6 +339,14 @@ public class SystemStats {
     }
     
     private func command(cmd: String, payload: Data?) {
+        if cmd == "update" {
+            guard self.update else { return }
+            debug("received update command", log: self.log)
+            self.triggerUpdate()
+            self.mqtt.controlAck(cmd)
+            return
+        }
+        
         guard self.control else { return }
         
         debug("received command '\(cmd)' with payload: \(String(data: payload ?? Data(), encoding: .utf8) ?? "")", log: self.log)
@@ -334,6 +356,9 @@ public class SystemStats {
             self.disableControl()
         case "sleep":
             self.sleep()
+        case "restart-client":
+            self.mqtt.controlAck(cmd)
+            restartApp(self)
         case "volume":
             guard let payload else { return }
             let value = String(data: payload, encoding: .utf8)
@@ -373,6 +398,11 @@ public class SystemStats {
 extension SystemStats {
     func disableControl() {
         self.control = false
+    }
+    
+    func triggerUpdate() {
+        debug("received remote update command, checking for a new version...", log: self.log)
+        NotificationCenter.default.post(name: .remoteUpdate, object: nil)
     }
     
     func sleep() {

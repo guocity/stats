@@ -145,9 +145,14 @@ public struct Units {
         return gigabytes / 1_000
     }
     
-    public func getReadableTuple(base: DataSizeBase = .byte) -> (String, String) {
+    public func getReadableTuple(base: DataSizeBase = .byte, unit: String = NetworkSpeedUnitAuto) -> (String, String) {
         let stringBase = base == .byte ? "B" : "b"
         let multiplier: Double = base == .byte ? 1 : 8
+        
+        if let fixedUnit = networkSpeedSizeUnit(from: unit), let speedPrefix = networkSpeedPrefix(from: unit) {
+            let value = self.toUnit(fixedUnit) * multiplier
+            return (self.formatSpeedValue(value), "\(speedPrefix)\(stringBase)/s")
+        }
         
         switch bytes {
         case 0..<1_000:
@@ -158,37 +163,18 @@ public struct Units {
             return (String(format: "%.1f", megabytes*multiplier), "M\(stringBase)/s")
         case (1_000 * 1_000 * 100)..<(1_000 * 1_000 * 1_000):
             return (String(format: "%.0f", megabytes*multiplier), "M\(stringBase)/s")
-        case (1_000 * 1_000 * 1_000)...Int64.max:
+        case (1_000 * 1_000 * 1_000)..<(1_000 * 1_000 * 1_000 * 1_000):
             return (String(format: "%.1f", gigabytes*multiplier), "G\(stringBase)/s")
+        case (1_000 * 1_000 * 1_000 * 1_000)...Int64.max:
+            return (String(format: "%.1f", terabytes*multiplier), "T\(stringBase)/s")
         default:
             return (String(format: "%.0f", kilobytes*multiplier), "K\(stringBase)B/s")
         }
     }
     
-    public func getReadableSpeed(base: DataSizeBase = .byte, omitUnits: Bool = false) -> String {
-        let stringBase = base == .byte ? "B" : "b"
-        let multiplier: Double = base == .byte ? 1 : 8
-        
-        switch bytes*Int64(multiplier) {
-        case 0..<1_000:
-            let unit = omitUnits ? "" : " K\(stringBase)/s"
-            return "0\(unit)"
-        case 1_000..<(1_000 * 1_000):
-            let unit = omitUnits ? "" : " K\(stringBase)/s"
-            return String(format: "%.0f\(unit)", kilobytes*multiplier)
-        case 1_000..<(1_000 * 1_000 * 100):
-            let unit = omitUnits ? "" : " M\(stringBase)/s"
-            return String(format: "%.1f\(unit)", megabytes*multiplier)
-        case (1_000 * 1_000 * 100)..<(1_000 * 1_000 * 1_000):
-            let unit = omitUnits ? "" : " M\(stringBase)/s"
-            return String(format: "%.0f\(unit)", megabytes*multiplier)
-        case (1_000 * 1_000 * 1_000)...Int64.max:
-            let unit = omitUnits ? "" : " G\(stringBase)/s"
-            return String(format: "%.1f\(unit)", gigabytes*multiplier)
-        default:
-            let unit = omitUnits ? "" : " K\(stringBase)/s"
-            return String(format: "%.0f\(unit)", kilobytes*multiplier)
-        }
+    public func getReadableSpeed(base: DataSizeBase = .byte, unit: String = NetworkSpeedUnitAuto, omitUnits: Bool = false) -> String {
+        let readable = self.getReadableTuple(base: base, unit: unit)
+        return omitUnits ? readable.0 : "\(readable.0) \(readable.1)"
     }
     
     public func getReadableMemory(style: ByteCountFormatter.CountStyle = .file) -> String {
@@ -213,6 +199,27 @@ public struct Units {
         case .TB: return self.terabytes
         default: return Double(self.bytes)
         }
+    }
+    
+    private func formatSpeedValue(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.decimalSeparator = "."
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        
+        switch value {
+        case 0:
+            formatter.maximumFractionDigits = 0
+        case ..<10:
+            formatter.maximumFractionDigits = 2
+        case ..<100:
+            formatter.maximumFractionDigits = 1
+        default:
+            formatter.maximumFractionDigits = 0
+        }
+        
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
     }
 }
 
@@ -255,7 +262,7 @@ public struct DiskSize {
 }
 
 public class LabelField: NSTextField {
-    public init(frame: NSRect = NSRect.zero, _ label: String = "") {
+    public init(frame: NSRect = NSRect.zero, _ label: String = "", size: CGFloat = 12) {
         super.init(frame: frame)
         
         self.isEditable = false
@@ -268,7 +275,7 @@ public class LabelField: NSTextField {
         self.stringValue = label
         self.textColor = .secondaryLabelColor
         self.alignment = .natural
-        self.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        self.font = NSFont.systemFont(ofSize: size, weight: .regular)
         
         self.cell?.truncatesLastVisibleLine = true
         self.cell?.usesSingleLineMode = true
@@ -305,6 +312,8 @@ public class ValueField: NSTextField {
 
 public class StatusBadgeView: NSStackView {
     private var status: Bool?
+    private let ok: String
+    private let notOk: String
     private let labelField: NSTextField = LabelField("")
     
     public override var intrinsicContentSize: CGSize {
@@ -319,13 +328,15 @@ public class StatusBadgeView: NSStackView {
     }
     private var label: String {
         if let status {
-            return status ? localizedString("UP") : localizedString("DOWN")
+            return status ? localizedString(self.ok) : localizedString(self.notOk)
         }
         return ""
     }
     
-    public init(frame: NSRect = NSRect(origin: .zero, size: NSSize(width: 50, height: 14)), _ status: Bool? = nil) {
+    public init(frame: NSRect = NSRect(origin: .zero, size: NSSize(width: 50, height: 14)), _ status: Bool? = nil, ok: String = "UP", notOk: String = "DOWN") {
         self.status = status
+        self.ok = ok
+        self.notOk = notOk
         
         super.init(frame: frame)
         
@@ -429,7 +440,7 @@ public func separatorView(_ title: String, origin: NSPoint = NSPoint(x: 0, y: 0)
     return view
 }
 
-public func popupBadgeRow(_ view: NSView? = nil, title: String, status: Bool? = nil) -> (LabelField, StatusBadgeView, NSView) {
+public func popupBadgeRow(_ view: NSView? = nil, title: String, status: Bool? = nil, ok: String = "UP", notOk: String = "DOWN") -> (LabelField, StatusBadgeView, NSView) {
     let width = view?.frame.width ?? 0
     let height: CGFloat = 22
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
@@ -437,7 +448,7 @@ public func popupBadgeRow(_ view: NSView? = nil, title: String, status: Bool? = 
     let labelWidth = title.widthOfString(usingFont: .systemFont(ofSize: 12, weight: .regular)) + 4
     let labelView: LabelField = LabelField(frame: NSRect(x: 0, y: (height-16)/2, width: labelWidth, height: 16), title)
     
-    let badgeView = StatusBadgeView(frame: NSRect(x: rowView.frame.width - 50, y: (height-14)/2, width: 50, height: 14), status)
+    let badgeView = StatusBadgeView(frame: NSRect(x: rowView.frame.width - 50, y: (height-14)/2, width: 50, height: 14), status, ok: ok, notOk: notOk)
     badgeView.autoresizingMask = [.minXMargin]
     
     rowView.addSubview(labelView)
@@ -505,13 +516,10 @@ public func portalRow(_ v: NSStackView, title: String, value: String = "", isSel
     return (labelView, valueView, view)
 }
 
-public func popupWithColorRow(_ view: NSView, color: NSColor, title: String, value: String) -> (NSView, LabelField, ValueField) {
+public func popupWithColorRow(_ view: NSView, color: NSColor, title: String, value: String) -> (ColorBlock, LabelField, ValueField) {
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: view.frame.width, height: 22))
     
-    let colorView: NSView = NSView(frame: NSRect(x: 3, y: 6, width: 10, height: 10))
-    colorView.wantsLayer = true
-    colorView.layer?.backgroundColor = color.cgColor
-    colorView.layer?.cornerRadius = 3
+    let colorView: ColorBlock = ColorBlock(frame: NSRect(x: 3, y: 6, width: 10, height: 10), color: color)
     let labelWidth = min(180, title.widthOfString(usingFont: .systemFont(ofSize: 13, weight: .regular)) + 5)
     let labelView: LabelField = LabelField(frame: NSRect(x: 18, y: (22-16)/2, width: labelWidth, height: 16), title)
     let valueView: ValueField = ValueField(frame: NSRect(x: 18 + labelWidth, y: (22-16)/2, width: rowView.frame.width - labelWidth - 18, height: 16), value)
@@ -1031,6 +1039,12 @@ public class SettingsContainerView: NSStackView {
     }
 }
 
+public enum SMCHelperInstallState {
+    case enabled
+    case requiresApproval
+    case failed
+}
+
 public class SMCHelper {
     public static let shared = SMCHelper()
     
@@ -1042,6 +1056,19 @@ public class SMCHelper {
             return SMAppService.daemon(plistName: self.plistName).status == .enabled
         }
         return self.legacyIsInstalled
+    }
+    
+    public var requiresApproval: Bool {
+        if #available(macOS 13, *) {
+            return SMAppService.daemon(plistName: self.plistName).status == .requiresApproval
+        }
+        return false
+    }
+    
+    public func openLoginItems() {
+        if #available(macOS 13, *) {
+            SMAppService.openSystemSettingsLoginItems()
+        }
     }
     
     private var legacyIsInstalled: Bool {
@@ -1092,8 +1119,8 @@ public class SMCHelper {
             guard installedHelperVersion != helperVersion else { return }
             print("new version of SMC helper is detected, going to update...")
             self.uninstall(silent: true)
-            self.install { installed in
-                if installed {
+            self.install { state in
+                if case .enabled = state {
                     print("the new version of SMC helper was successfully installed")
                 } else {
                     print("error when installing a new version of the SMC helper")
@@ -1102,32 +1129,49 @@ public class SMCHelper {
         }
     }
     
-    public func install(completion: @escaping (_ installed: Bool) -> Void) {
+    public func install(completion: @escaping (_ state: SMCHelperInstallState) -> Void) {
         if #available(macOS 13, *) {
             self.cleanupLegacyInstall()
             let service = SMAppService.daemon(plistName: self.plistName)
             if service.status == .enabled {
-                completion(true)
+                completion(.enabled)
                 return
             }
             
             do {
                 try service.register()
             } catch {
-                print("failed to register SMC helper daemon: \(error.localizedDescription), resetting and retrying")
+                print("failed to register SMC helper daemon: \(error.localizedDescription)")
+                if service.status == .requiresApproval {
+                    print("SMC helper requires approval in System Settings > Login Items")
+                    completion(.requiresApproval)
+                    return
+                }
+                print("resetting and retrying")
                 try? service.unregister()
                 do {
                     try service.register()
                 } catch {
                     print("failed to register SMC helper daemon after reset: \(error.localizedDescription)")
+                    if service.status == .requiresApproval {
+                        print("SMC helper requires approval in System Settings > Login Items")
+                        completion(.requiresApproval)
+                        return
+                    }
+                    completion(.failed)
+                    return
                 }
             }
             
-            if service.status == .requiresApproval {
+            switch service.status {
+            case .enabled:
+                completion(.enabled)
+            case .requiresApproval:
                 print("SMC helper requires approval in System Settings > Login Items")
-                SMAppService.openSystemSettingsLoginItems()
+                completion(.requiresApproval)
+            default:
+                completion(.failed)
             }
-            completion(service.status == .enabled)
             
             return
         }
@@ -1144,13 +1188,13 @@ public class SMCHelper {
         self.connection = nil
     }
     
-    private func installLegacy(completion: @escaping (_ installed: Bool) -> Void) {
+    private func installLegacy(completion: @escaping (_ state: SMCHelperInstallState) -> Void) {
         var authRef: AuthorizationRef?
         var authStatus = AuthorizationCreate(nil, nil, [.preAuthorize], &authRef)
         
         guard authStatus == errAuthorizationSuccess else {
             print("Unable to get a valid empty authorization reference to load Helper daemon")
-            completion(false)
+            completion(.failed)
             return
         }
         
@@ -1173,7 +1217,7 @@ public class SMCHelper {
         
         guard authStatus == errAuthorizationSuccess else {
             print("Unable to get a valid loading authorization reference to load Helper daemon")
-            completion(false)
+            completion(.failed)
             return
         }
         
@@ -1181,12 +1225,12 @@ public class SMCHelper {
         if SMJobBless(kSMDomainSystemLaunchd, "eu.exelban.Stats.SMC.Helper" as CFString, authRef, &error) == false {
             let blessError = error!.takeRetainedValue() as Error
             print("Error while installing the Helper: \(blessError.localizedDescription)")
-            completion(false)
+            completion(.failed)
             return
         }
         
         AuthorizationFree(authRef!, [])
-        completion(true)
+        completion(.enabled)
     }
     
     private func helperConnection() -> NSXPCConnection? {
@@ -2193,5 +2237,151 @@ public class LinkButton: NSButton {
     
     public override func resetCursorRects() {
         self.addCursorRect(self.bounds, cursor: .pointingHand)
+    }
+}
+
+public class ColorBlock: NSView {
+    public init(frame: CGRect? = nil, toolTip: String? = nil, color: NSColor? = nil) {
+        super.init(frame: frame != nil ? frame! : NSRect(x: 0, y: 0, width: 10, height: 10))
+        
+        self.wantsLayer = true
+        self.layer?.backgroundColor = (color != nil ? color! : NSColor.lightGray.withAlphaComponent(0.75)).cgColor
+        self.layer?.cornerRadius = 3
+        
+        if let toolTip {
+            self.toolTip = toolTip
+        }
+        
+        self.widthAnchor.constraint(equalToConstant: 10).isActive = true
+        self.heightAnchor.constraint(equalToConstant: 10).isActive = true
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    public func set(color: NSColor? = nil) {
+        let resolved = color ?? .lightGray.withAlphaComponent(0.75)
+        self.effectiveAppearance.performAsCurrentDrawingAppearance {
+            self.layer?.backgroundColor = resolved.cgColor
+        }
+    }
+    
+    public func set(toolTip: String? = nil) {
+        self.toolTip = toolTip
+    }
+}
+
+public class PopupButton: NSButton {
+    private var callback: (() -> Void)?
+    
+    public var currentState: Bool? = nil
+    
+    public init(toolTip: String? = nil, state: Bool? = nil, icon: String = "slider.horizontal.3", action: (() -> Void)? = nil) {
+        self.callback = action
+        self.currentState = state
+        
+        super.init(frame: NSRect(x: 0, y: 0, width: 20, height: 16))
+        
+        self.translatesAutoresizingMaskIntoConstraints = false
+        self.wantsLayer = true
+        self.layer?.cornerRadius = Constants.Popup.radius
+        self.contentTintColor = .lightGray
+        self.layer?.backgroundColor = NSColor.clear.cgColor
+        
+        self.bezelStyle = .regularSquare
+        self.isBordered = false
+        self.imageScaling = .scaleProportionallyDown
+        self.image = iconFromSymbol(name: icon, scale: .medium)
+        
+        self.action = #selector(self.click)
+        self.target = self
+        if let toolTip {
+            self.toolTip = toolTip
+        }
+        
+        self.updateAppearance()
+        
+        self.widthAnchor.constraint(equalToConstant: self.frame.width).isActive = true
+        self.heightAnchor.constraint(equalToConstant: self.frame.height).isActive = true
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    @objc private func click() {
+        self.callback?()
+        if self.currentState != nil {
+            self.currentState = !self.currentState!
+        }
+        self.updateAppearance()
+    }
+    
+    private func updateAppearance() {
+        guard let currentState else { return }
+        
+        if currentState {
+            self.contentTintColor = .white
+            self.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        } else {
+            self.contentTintColor = .lightGray
+            self.layer?.backgroundColor = NSColor.clear.cgColor
+        }
+    }
+}
+
+public class SeparatorView: NSStackView {
+    public init(label: String, button: NSView? = nil) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 0, height: Constants.Popup.separatorHeight))
+        
+        self.orientation = .horizontal
+        self.alignment = .centerY
+        self.distribution = .fill
+        self.spacing = Constants.Popup.margins
+        self.translatesAutoresizingMaskIntoConstraints = false
+        
+        let labelView: NSTextField = NSTextField(labelWithString: "")
+        labelView.alignment = .center
+        labelView.isBezeled = false
+        labelView.isEditable = false
+        labelView.drawsBackground = false
+        labelView.attributedStringValue = NSAttributedString(string: label.uppercased(), attributes: [
+            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+            .kern: 1.0
+        ])
+        labelView.setContentHuggingPriority(.required, for: .horizontal)
+        labelView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        
+        let leftLine = self.line()
+        let rightLine = self.line()
+        
+        self.addArrangedSubview(leftLine)
+        self.addArrangedSubview(labelView)
+        self.addArrangedSubview(rightLine)
+        
+        if let button {
+            self.addArrangedSubview(button)
+        }
+        
+        NSLayoutConstraint.activate([
+            self.heightAnchor.constraint(equalToConstant: Constants.Popup.separatorHeight),
+            labelView.centerXAnchor.constraint(equalTo: self.centerXAnchor),
+            labelView.centerYAnchor.constraint(equalTo: self.centerYAnchor)
+        ])
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func line() -> NSView {
+        let view: NSView = NSView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return view
     }
 }

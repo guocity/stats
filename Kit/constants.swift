@@ -20,6 +20,7 @@ public struct Popup_c_s {
     public let separatorHeight: CGFloat = 30
     public let portalHeight: CGFloat = 120
     public let radius: CGFloat = 6
+    public let processHeight: CGFloat = 22
 }
 
 public struct Settings_c_s {
@@ -80,6 +81,17 @@ public enum ModuleType: Int {
         case .aiTokens: return "AI Tokens"
         case .remote: return "Remote"
         case .combined: return ""
+        }
+    }
+    
+    public var activityMonitorTab: Int? {
+        switch self {
+        case .CPU: return 0
+        case .RAM: return 1
+        case .disk: return 3
+        case .network: return 4
+        case .battery: return 2
+        default: return nil
         }
     }
 }

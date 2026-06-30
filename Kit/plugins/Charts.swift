@@ -758,6 +758,7 @@ public class LineChartView: ChartView {
 
 public class NetworkChartView: ChartView {
     private var base: DataSizeBase = .byte
+    private var speedUnit: String = NetworkSpeedUnitAuto
     
     private var reversedOrder: Bool
     
@@ -795,7 +796,8 @@ public class NetworkChartView: ChartView {
         
         let tooltip: (DoubleValue) -> String = { [weak self] v in
             let base: DataSizeBase = self?.read { self?.base ?? .byte } ?? .byte
-            return Units(bytes: Int64(v.value)).getReadableSpeed(base: base)
+            let speedUnit: String = self?.read { self?.speedUnit ?? NetworkSpeedUnitAuto } ?? NetworkSpeedUnitAuto
+            return Units(bytes: Int64(v.value)).getReadableSpeed(base: base, unit: speedUnit)
         }
         self.inChart.setToolTipFunc(tooltip)
         self.outChart.setToolTipFunc(tooltip)
@@ -810,6 +812,10 @@ public class NetworkChartView: ChartView {
     
     public func setBase(_ newBase: DataSizeBase) {
         self.write { self.base = newBase }
+    }
+    
+    public func setSpeedUnit(_ newUnit: String) {
+        self.write { self.speedUnit = newUnit }
     }
     
     public func addValue(upload: Double, download: Double) {
