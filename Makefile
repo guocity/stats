@@ -6,10 +6,18 @@ APP_PATH = "$(BUILD_PATH)/$(APP).app"
 ZIP_PATH = "$(BUILD_PATH)/$(APP).zip"
 WIDGET_PATH = "$(BUILD_PATH)/$(APP).app/Contents/PlugIns/WidgetsExtension.appex"
 
-.SILENT: archive notarize sign verify prepare-dmg prepare-dSYM clean next-version check history disk smc leveldb
-.PHONY: build archive notarize sign verify prepare-dmg prepare-dSYM clean next-version check history open smc leveldb
+.SILENT: archive archive-ci notarize notarize-ci sign sign-ci verify prepare-dmg prepare-dSYM clean next-version check history disk smc leveldb
+.PHONY: build build-ci release-ci archive archive-ci notarize notarize-ci sign sign-ci verify prepare-dmg prepare-dSYM clean next-version check history open smc leveldb
+
+NOTARY_PROFILE ?= AC_PASSWORD
 
 build: clean next-version archive notarize sign verify prepare-dmg prepare-dSYM open
+
+build-ci: clean next-version archive-ci notarize-ci sign-ci verify prepare-dmg prepare-dSYM
+
+release-ci: next-patch-version build-ci
+	@versionNumber=$$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$(PWD)/build/Stats.app/Contents/Info.plist") ;\
+	echo "$$versionNumber" > $(BUILD_PATH)/version.txt
 
 next-patch-version:
 	@python3 Scripts/increment_version.py
@@ -43,11 +51,38 @@ archive: clean
 
 	echo "Project archived successfully"
 
+archive-ci: clean
+	echo "Exporting application archive..."
+
+	xcodebuild \
+  		-scheme $(APP) \
+  		-destination 'platform=macOS' \
+  		-configuration Release archive \
+  		-archivePath $(BUILD_PATH)/$(APP).xcarchive
+
+	echo "Application built, starting the export archive..."
+
+	xcodebuild -exportArchive \
+  		-exportOptionsPlist "$(PWD)/exportOptions.plist" \
+  		-archivePath $(BUILD_PATH)/$(APP).xcarchive \
+  		-exportPath $(BUILD_PATH)
+
+	ditto -c -k --keepParent $(APP_PATH) $(ZIP_PATH)
+
+	echo "Project archived successfully"
+
 notarize:
 	osascript -e 'display notification "Submitting app for notarization..." with title "Build the Stats"'
 	echo "Submitting app for notarization..."
 
 	xcrun notarytool submit --keychain-profile "AC_PASSWORD" --wait $(ZIP_PATH)
+
+	echo "Stats successfully notarized"
+
+notarize-ci:
+	echo "Submitting app for notarization..."
+
+	xcrun notarytool submit --keychain-profile "$(NOTARY_PROFILE)" --wait $(ZIP_PATH)
 
 	echo "Stats successfully notarized"
 
@@ -59,6 +94,14 @@ sign:
 	spctl -a -t exec -vvv $(APP_PATH)
 
 	osascript -e 'display notification "Stats successfully stapled" with title "Build the Stats"'
+	echo "Stats successfully stapled"
+
+sign-ci:
+	echo "Going to staple an application..."
+
+	xcrun stapler staple $(APP_PATH)
+	spctl -a -t exec -vvv $(APP_PATH)
+
 	echo "Stats successfully stapled"
 
 verify:

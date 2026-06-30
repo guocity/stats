@@ -1,0 +1,84 @@
+name: release
+
+# Signed build, notarization, and GitHub Release upload.
+#
+# Required repository secrets:
+#   BUILD_CERTIFICATE_BASE64  - Developer ID Application .p12 (base64)
+#   P12_PASSWORD              - password used when exporting the .p12
+#   KEYCHAIN_PASSWORD         - ephemeral keychain password for the runner
+#   APPLE_TEAM_ID             - Apple Developer Team ID (e.g. 3AK89L7342)
+#   APPSTORE_ISSUER_ID        - App Store Connect API Issuer ID
+#   APPSTORE_KEY_ID           - App Store Connect API Key ID
+#   APPSTORE_PRIVATE_KEY      - contents of AuthKey_XXXXX.p8
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_version:
+        description: Increment marketing patch version and build number before building
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import code signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Configure notarization credentials
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          KEY_PATH=$RUNNER_TEMP/AuthKey.p8
+          printf '%s' "$APPSTORE_PRIVATE_KEY" > "$KEY_PATH"
+          xcrun notarytool store-credentials "AC_PASSWORD" \
+            --key "$KEY_PATH" \
+            --key-id "$APPSTORE_KEY_ID" \
+            --issuer "$APPSTORE_ISSUER_ID"
+
+      - name: Build, sign, notarize, and package
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ "${{ inputs.bump_version }}" = "true" ]; then
+            make release-ci
+          else
+            make build-ci
+            versionNumber=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "build/Stats.app/Contents/Info.plist")
+            echo "$versionNumber" > build/version.txt
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          versionNumber=$(cat build/version.txt)
+          gh release create "v${versionNumber}" Stats.dmg \
+            --repo "${{ github.repository }}" \
+            --title "v${versionNumber}" \
+            --notes "Release v${versionNumber}" \
+            --generate-notes

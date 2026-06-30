@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - master
+      - guocity-version-stats
   pull_request:
     branches:
       - master
+      - guocity-version-stats
 
 concurrency:
   group: build-${{ github.ref }}
@@ -18,4 +20,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - run: xcodebuild -scheme Stats -destination 'platform=macOS' -configuration Release archive CODE_SIGNING_ALLOWED=NO
+
+      - name: Build unsigned release archive
+        run: |
+          xcodebuild \
+            -scheme Stats \
+            -destination 'platform=macOS' \
+            -configuration Release \
+            archive \
+            -archivePath build/Stats.xcarchive \
+            CODE_SIGNING_ALLOWED=NO
