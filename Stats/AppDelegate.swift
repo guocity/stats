@@ -48,6 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     internal var menuBarItem: NSStatusItem? = nil
     internal var combinedView: CombinedView = CombinedView()
+    internal var modulesMounted: Bool = false
     
     internal let updateActivity = NSBackgroundActivityScheduler(identifier: "eu.exelban.Stats.updateCheck")
     internal let supportActivity = NSBackgroundActivityScheduler(identifier: "eu.exelban.Stats.support")
@@ -78,6 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         SMCHelper.shared.checkForUpdate()
         self.setup {
             modules.reversed().forEach{ $0.mount() }
+            self.modulesMounted = true
             self.showSettingsIfNoActiveWidgets()
         }
         self.defaultValues()
