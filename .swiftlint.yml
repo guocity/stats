@@ -9,6 +9,11 @@ disabled_rules:
   - large_tuple
   - function_body_length
 
+excluded:
+  - build
+  - Carthage
+  - Pods
+
 opt_in_rules:
   - control_statement
   - empty_count
