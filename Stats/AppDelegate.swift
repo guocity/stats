@@ -52,6 +52,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     internal let updateActivity = NSBackgroundActivityScheduler(identifier: "eu.exelban.Stats.updateCheck")
     internal let supportActivity = NSBackgroundActivityScheduler(identifier: "eu.exelban.Stats.support")
+    internal let supportRetryActivity = NSBackgroundActivityScheduler(identifier: "eu.exelban.Stats.supportRetry")
     
     internal var clickInNotification: Bool = false
     
@@ -90,6 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NotificationCenter.default.addObserver(self, selector: #selector(handleToggleSettings), name: .toggleSettings, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRemoteAuthenticated), name: .remoteAuthenticated, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRemoteUpdate), name: .remoteUpdate, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePopupVisibility), name: .popupVisibilityChanged, object: nil)
         
         NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             self?.handleKeyEvent(event)
@@ -146,6 +148,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
     
+    @objc private func handlePopupVisibility(_ notification: Notification) {
+        guard let state = notification.userInfo?["state"] as? Bool, !state else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            self.tryToShowSupportWindow(interaction: true)
+        }
+    }
+    
     private func showSettingsIfNoActiveWidgets() {
         if self.pauseState { return }
         let hasActive = modules.contains(where: { $0.enabled != false && $0.available != false && !$0.menuBar.widgets.filter({ $0.isActive }).isEmpty })
@@ -156,7 +165,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     internal func ensureSettingsWindow() -> SettingsWindow {
         if let w = self.settingsWindow { return w }
         let w = SettingsWindow()
-        w.onClose = { [weak self] in self?.settingsWindow = nil }
+        w.onClose = { [weak self] in
+            self?.settingsWindow = nil
+            self?.tryToShowSupportWindow(interaction: true)
+        }
         self.settingsWindow = w
         return w
     }
