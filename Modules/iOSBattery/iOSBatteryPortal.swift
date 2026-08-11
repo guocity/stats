@@ -8,6 +8,7 @@ import Kit
 
 internal final class iOSBatteryPortal: NSStackView, Portal_p {
     var name: String
+    var height: CGFloat = 120
 
     private let levelField: NSTextField = ValueField(frame: NSRect.zero, "")
     private let chargingField: NSTextField = ValueField(frame: NSRect.zero, "")
@@ -57,7 +58,7 @@ internal final class iOSBatteryPortal: NSStackView, Portal_p {
         box.addArrangedSubview(rightStack)
 
         self.addArrangedSubview(box)
-        self.heightAnchor.constraint(equalToConstant: Constants.Popup.portalHeight).isActive = true
+        self.heightAnchor.constraint(equalToConstant: self.height).isActive = true
     }
 
     required init?(coder: NSCoder) {

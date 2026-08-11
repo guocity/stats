@@ -8,6 +8,7 @@ import Kit
 
 internal final class AITokensPortal: NSStackView, Portal_p {
     var name: String
+    var height: CGFloat = 120
 
     private let titleField: NSTextField = ValueField(frame: .zero, "")
     private let usedField: NSTextField = ValueField(frame: .zero, "")
@@ -47,7 +48,7 @@ internal final class AITokensPortal: NSStackView, Portal_p {
 
         self.addArrangedSubview(topRow)
         self.addArrangedSubview(self.resetField)
-        self.heightAnchor.constraint(equalToConstant: Constants.Popup.portalHeight).isActive = true
+        self.heightAnchor.constraint(equalToConstant: self.height).isActive = true
     }
 
     required init?(coder: NSCoder) {

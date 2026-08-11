@@ -1185,10 +1185,10 @@ class MQTTManager: NSObject {
     private func receiveMessage() {
         self.webSocket?.receive { [weak self] result in
             switch result {
-            case .failure(let error):
+            case .failure:
                 self?.isConnected = false
                 self?.isConnecting = false
-                self?.handleWebSocketError(error)
+                self?.handleWebSocketError()
             case .success(let message):
                 switch message {
                 case .data(let data):
@@ -1219,8 +1219,8 @@ class MQTTManager: NSObject {
         self.pingTimer = nil
     }
     
-    private func handleWebSocketError(_ error: Error) {
-        if let urlError = error as? URLError, urlError.code.rawValue == 401 {
+    private func handleWebSocketError() {
+        if let response = self.webSocket?.response as? HTTPURLResponse, response.statusCode == 401 {
             SystemStats.shared.start()
         } else {
             self.reconnect()

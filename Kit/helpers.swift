@@ -632,14 +632,8 @@ public extension Array where Element: Hashable {
 }
 
 public func toggleNSControlState(_ control: NSControl?, state: NSControl.StateValue) {
-    if #available(OSX 10.15, *) {
-        if let checkbox = control as? NSSwitch {
-            checkbox.state = state
-        }
-    } else {
-        if let checkbox = control as? NSButton {
-            checkbox.state = state
-        }
+    if let checkbox = control as? NSSwitch {
+        checkbox.state = state
     }
 }
 
@@ -1020,6 +1014,76 @@ public func process(path: String, arguments: [String]) -> String? {
     }
     
     let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    let output = String(data: outputData, encoding: .utf8)
+    guard let output, !output.isEmpty else { return nil }
+    
+    return output
+}
+
+public func process(path: String, arguments: [String], environment: [String: String]? = nil, timeout: TimeInterval) -> String? {
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: path)
+    task.arguments = arguments
+    if let environment {
+        task.environment = environment
+    }
+    
+    let inputPipe = Pipe()
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    task.standardInput = inputPipe
+    task.standardOutput = outputPipe
+    task.standardError = errorPipe
+    
+    let exited = DispatchGroup()
+    exited.enter()
+    task.terminationHandler = { _ in exited.leave() }
+    
+    do {
+        try task.run()
+    } catch let err {
+        task.terminationHandler = nil
+        exited.leave()
+        debug("\(path): \(err.localizedDescription)")
+        return nil
+    }
+    
+    var outputData = Data()
+    let drained = DispatchGroup()
+    drained.enter()
+    DispatchQueue.global(qos: .utility).async {
+        outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        drained.leave()
+    }
+    drained.enter()
+    DispatchQueue.global(qos: .utility).async {
+        _ = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        drained.leave()
+    }
+    
+    var timedOut = false
+    if exited.wait(timeout: .now() + timeout) == .timedOut {
+        timedOut = true
+        task.terminate()
+        if exited.wait(timeout: .now() + 2) == .timedOut {
+            kill(task.processIdentifier, SIGKILL)
+            _ = exited.wait(timeout: .now() + 2)
+        }
+    }
+    
+    inputPipe.fileHandleForWriting.closeFile()
+    guard drained.wait(timeout: .now() + 2) == .success else {
+        error("\(path) did not exit within \(Int(timeout))s and could not be killed")
+        return nil
+    }
+    outputPipe.fileHandleForReading.closeFile()
+    errorPipe.fileHandleForReading.closeFile()
+    
+    if timedOut {
+        error("\(path) did not exit within \(Int(timeout))s, terminated")
+        return nil
+    }
+    
     let output = String(data: outputData, encoding: .utf8)
     guard let output, !output.isEmpty else { return nil }
     
@@ -1478,14 +1542,7 @@ public class AppIcon: NSView {
 }
 
 public func controlState(_ sender: NSControl) -> Bool {
-    var state: NSControl.StateValue
-    
-    if #available(OSX 10.15, *) {
-        state = sender is NSSwitch ? (sender as! NSSwitch).state : .off
-    } else {
-        state = sender is NSButton ? (sender as! NSButton).state : .off
-    }
-    
+    let state: NSControl.StateValue = sender is NSSwitch ? (sender as! NSSwitch).state : .off
     return state == .on
 }
 
@@ -1993,9 +2050,9 @@ public class CPUeStressTest {
         let efficientCoreCount: Int = Int(SystemKit.shared.device.info.cpu?.eCores ?? 2)
         self.workers.removeAll()
         
-        for index in 0..<efficientCoreCount {
+        for _ in 0..<efficientCoreCount {
             let worker = DispatchWorkItem { [weak self] in
-                self?.test(threadIndex: index)
+                self?.test()
             }
             self.workers.append(worker)
             self.queue.async(execute: worker)
@@ -2008,7 +2065,7 @@ public class CPUeStressTest {
         self.workers.removeAll()
     }
     
-    private func test(threadIndex: Int) {
+    private func test() {
         pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0)
         var x: Double = 1.0
         while self.isRunning {
@@ -2034,9 +2091,9 @@ public class CPUpStressTest {
         let performanceCoreCount: Int = Int(SystemKit.shared.device.info.cpu?.pCores ?? 4)
         self.workers.removeAll()
         
-        for index in 0..<performanceCoreCount {
+        for _ in 0..<performanceCoreCount {
             let worker = DispatchWorkItem { [weak self] in
-                self?.test(threadIndex: index)
+                self?.test()
             }
             self.workers.append(worker)
             self.queue.async(execute: worker)
@@ -2049,7 +2106,7 @@ public class CPUpStressTest {
         self.workers.removeAll()
     }
     
-    private func test(threadIndex: Int) {
+    private func test() {
         pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)
         var x: Double = 1.0
         while self.isRunning {
