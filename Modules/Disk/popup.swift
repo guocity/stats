@@ -47,6 +47,7 @@ internal class Popup: PopupWrapper {
     
     private let settingsSection = PreferencesSection(title: localizedString("Drives"))
     private var lastList: [String] = []
+    private var smartValues: [String: smart_t] = [:]
     
     public init(_ module: ModuleType) {
         super.init(module, frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 0))
@@ -145,11 +146,15 @@ internal class Popup: PopupWrapper {
             if let view = self.disks.subviews.filter({ $0 is DiskView }).map({ $0 as! DiskView }).first(where: { $0.uuid == drive.uuid }) {
                 view.update(drive)
             } else {
-                self.disks.addArrangedSubview(DiskView(
+                let view = DiskView(
                     width: Constants.Popup.width,
                     drive: drive,
                     resize: self.recalculateHeight
-                ))
+                )
+                self.disks.addArrangedSubview(view)
+                if let smart = self.smartValues[drive.uuid] {
+                    view.updateSMART(smart)
+                }
             }
         }
     }
@@ -157,8 +162,23 @@ internal class Popup: PopupWrapper {
     internal func activityCallback(_ value: Disks) {
         let views = self.disks.subviews.filter{ $0 is DiskView }.map{ $0 as! DiskView }
         value.reversed().forEach { (drive: drive) in
-            if let view = views.first(where: { $0.name == drive.mediaName }) {
+            if let view = views.first(where: { $0.uuid == drive.uuid }) {
                 view.updateStats(stats: drive.activity)
+            }
+        }
+    }
+    
+    internal func smartCallback(_ value: Disks) {
+        value.forEach { (drive: drive) in
+            if let smart = drive.smart {
+                self.smartValues[drive.uuid] = smart
+            }
+        }
+        
+        let views = self.disks.subviews.filter{ $0 is DiskView }.map{ $0 as! DiskView }
+        views.forEach { (v: DiskView) in
+            if let smart = self.smartValues[v.uuid] {
+                v.updateSMART(smart)
             }
         }
     }
@@ -361,7 +381,10 @@ internal class DiskView: NSStackView {
             self.barView.setValue(ColorValue(Double(self.size - value.free) / Double(self.size), color: self.mainColor))
         }
         self.detailsView.update(details: value)
-        self.detailsView.update(smart: value.smart)
+    }
+    
+    public func updateSMART(_ smart: smart_t?) {
+        self.detailsView.update(smart: smart)
     }
     
     public func appear() {
@@ -459,14 +482,14 @@ internal class ChartView: NSStackView {
     private let readValueField: ValueField = {
         let field = ValueField("0 KB/s")
         field.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        field.alignment = .right
+        field.alignment = .trailing
         field.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         return field
     }()
     private let writeValueField: ValueField = {
         let field = ValueField("0 KB/s")
         field.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        field.alignment = .right
+        field.alignment = .trailing
         field.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         return field
     }()
@@ -608,14 +631,14 @@ private class LegendView: NSView {
         let height: CGFloat = 14
         let view: NSView = NSView(frame: NSRect(x: 0, y: 0, width: self.frame.width, height: self.frame.height))
         
-        let legendField = TextView(frame: NSRect(x: 0, y: (view.frame.height-height)/2, width: view.frame.width - 40, height: height))
+        let legendField = TextView(frame: NSRect(x: isRTL ? 40 : 0, y: (view.frame.height-height)/2, width: view.frame.width - 40, height: height))
         legendField.font = NSFont.systemFont(ofSize: 11, weight: .light)
         legendField.stringValue = self.legend(free: free)
         legendField.cell?.truncatesLastVisibleLine = true
         
-        let percentageField = TextView(frame: NSRect(x: view.frame.width - 40, y: (view.frame.height-height)/2, width: 40, height: height))
+        let percentageField = TextView(frame: NSRect(x: isRTL ? 0 : view.frame.width - 40, y: (view.frame.height-height)/2, width: 40, height: height))
         percentageField.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        percentageField.alignment = .right
+        percentageField.alignment = .trailing
         percentageField.stringValue = self.percentage(free: free)
         
         view.addSubview(legendField)
@@ -796,7 +819,7 @@ internal class DetailsView: NSStackView {
         let view: NSView = NSView(frame: NSRect(x: 0, y: 0, width: self.frame.width, height: self.smartHeight))
         view.widthAnchor.constraint(equalToConstant: view.bounds.width).isActive = true
         view.heightAnchor.constraint(equalToConstant: view.bounds.height).isActive = true
-        let separator = separatorView(localizedString("SMART"), origin: NSPoint(x: 0, y: self.smartHeight-Constants.Popup.separatorHeight), width: self.frame.width)
+        let separator = separatorView("SMART", origin: NSPoint(x: 0, y: self.smartHeight-Constants.Popup.separatorHeight), width: self.frame.width)
         let container: NSStackView = NSStackView(frame: NSRect(x: 0, y: 0, width: view.frame.width, height: separator.frame.origin.y))
         container.orientation = .vertical
         container.spacing = 0

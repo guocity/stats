@@ -282,6 +282,7 @@ internal class SensorView: NSStackView {
         self.addArrangedSubview(self.valueView)
         
         NSLayoutConstraint.activate([
+            self.valueView.widthAnchor.constraint(equalTo: self.widthAnchor),
             self.widthAnchor.constraint(equalToConstant: self.bounds.width)
         ])
     }
@@ -357,7 +358,6 @@ internal class ValueSensorView: NSStackView {
         
         NSLayoutConstraint.activate([
             self.labelView.heightAnchor.constraint(equalToConstant: 16),
-            self.widthAnchor.constraint(equalToConstant: self.bounds.width),
             self.heightAnchor.constraint(equalToConstant: self.bounds.height)
         ])
     }
@@ -552,7 +552,7 @@ internal class FanView: NSStackView {
         let value = self.fan.value
         let valueField: NSTextField = TextView()
         valueField.font = NSFont.systemFont(ofSize: 13, weight: .regular)
-        valueField.alignment = .right
+        valueField.alignment = .trailing
         valueField.stringValue = self.fanValue == .percentage ? "\(self.fan.percentage)%" : self.fan.formattedValue
         valueField.toolTip = "\(value)"
         

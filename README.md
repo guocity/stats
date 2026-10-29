@@ -1,9 +1,9 @@
 # Stats
 
-<a href="https://github.com/exelban/stats/releases"><p align="center"><img src="https://github.com/exelban/stats/raw/master/Stats/Supporting%20Files/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="120"></p></a>
+<a href="https://github.com/exelban/stats/releases"><p align="center"><img src="https://cdn.mac-stats.com/assets/icon.png" width="120"></p></a>
 
-[![Stats](https://serhiy.s3.eu-central-1.amazonaws.com/Github_repo/stats/menus%3Fv2.3.2.png?v1)](https://github.com/exelban/stats/releases)
-[![Stats](https://serhiy.s3.eu-central-1.amazonaws.com/Github_repo/stats/popups%3Fv2.3.2.png?v3)](https://github.com/exelban/stats/releases)
+[![Stats](https://cdn.mac-stats.com/assets/images/menus.png)](https://github.com/exelban/stats/releases)
+[![Stats](https://cdn.mac-stats.com/assets/images/popups.png)](https://github.com/exelban/stats/releases)
 
 macOS system monitor in your menu bar
 
@@ -18,20 +18,18 @@ To install it using Homebrew, open the Terminal app and type:
 brew install stats
 ```
 
+### Headless (SSH)
+To install Stats remotely over SSH and set it up as a remote monitoring agent, run:
+```bash
+curl -fsSL https://cdn.mac-stats.com/install.sh | bash
+```
+The script installs the app, enables the Remote module and prints a URL with an authorization code - open it on any device and sign in to your System Stats account to authorize the machine. After that Stats starts streaming metrics to your account and is registered to launch automatically at login and restart if it stops.
+The Mac needs an active user session (a locked screen is fine) to run the app; on a fully headless machine Stats will start at the next login.
+
 ### Uninstall
 Run the uninstall script bundled with the app (requires administrator privileges to remove the SMC helper):
 ```bash
 sh /Applications/Stats.app/Contents/Resources/Scripts/uninstall.sh
-```
-The script quits Stats and removes:
-
-   - the SMC helper (`/Library/LaunchDaemons/eu.exelban.Stats.SMC.Helper.plist` and `/Library/PrivilegedHelperTools/eu.exelban.Stats.SMC.Helper`)
-   - `Stats.app`
-   - application data and preferences (`~/Library/Application Support/Stats`, widget containers, and `eu.exelban.Stats` defaults)
-
-If the app has already been moved to the Trash, the script can be run directly from the repository:
-```bash
-curl -fsSL https://raw.githubusercontent.com/exelban/stats/master/Kit/scripts/uninstall.sh | sh
 ```
 
 ### Legacy version
@@ -76,6 +74,11 @@ Due to a problem with high data load in the system process (`chronod`) responsib
 
 **Solution:** open **Stats Settings** and toggle **macOS widgets** ON.
 
+### Wi-Fi network name shows Unknown
+macOS requires Location Services permission to read the Wi-Fi network name. If access for Stats is disabled, the network name may show as `Unknown` without a permission popup.
+
+**Solution:** open **System Settings → Privacy & Security → Location Services**, make sure Location Services is enabled, and toggle **Stats** ON. Then quit and reopen Stats.
+
 ### How to reduce energy impact or CPU usage of Stats?
 Stats tries to be efficient as it's possible. But reading some data periodically is not a cheap task. Each module has its own "price". So, if you want to reduce energy impact from the Stats you need to disable some Stats modules. The most inefficient modules are Sensors and Bluetooth. Disabling these modules could reduce CPU usage and power efficiency by up to 50% in some cases.
 
@@ -88,7 +91,7 @@ For example, a CPU is typically divided into two clusters: efficiency and perfor
 Additionally, with each new SoC, Apple changes the sensor keys. As a result, it takes time to determine which SMC values correspond to the appropriate sensors. If anyone knows how to accurately match the sensors for Apple Silicon, please contact me.
 
 ### App crash – what to do?
-First, ensure that you are using the latest version of Stats. There is a high chance that a fix preventing the crash has already been released. If you are already running the latest version, check the open issues. Only if none of the existing issues address your problem should you open a new issue.
+First, ensure that you are using the latest version of Stats. There is a high chance that a fix preventing the crash has already been released. If you are already running the latest version, search both [open and closed issues](https://github.com/exelban/stats/issues?q=is%3Aissue). If the crash has already been reported, add new diagnostic information to the existing issue when comments are open instead of opening a duplicate. Otherwise, use the [bug report form](https://github.com/exelban/stats/issues/new?template=bug_report.yml) and include your Mac model, chip, macOS version and build, Stats version, steps to reproduce, and the complete crash report from Console.
 
 ### Why my issue was closed without any response?
 Most probably because it's a duplicated issue and there is an answer to the question, report, or proposition. Please use a search by closed issues to get an answer.

@@ -33,7 +33,7 @@
 "Unknown" = "Невідомо";
 "Version" = "Версія";
 "Processor" = "Процесор";
-"Memory" = "Память";
+"Memory" = "Пам'ять";
 "Graphics" = "Графіка";
 "Close" = "Закрити";
 "Download" = "Завантажити";
@@ -47,12 +47,11 @@
 "None" = "Ніяка";
 "Dots" = "Пункти";
 "Arrows" = "Стрілки";
-"Characters" = "Літери";
+"Characters" = "Знаки";
 "Short" = "Короткий";
 "Long" = "Довгий";
-"Statistics" = "Статистика";
-"Max" = "Мін.";
-"Min" = "Макс.";
+"Max" = "Макс.";
+"Min" = "Мін.";
 "Reset" = "Скинути";
 "Alignment" = "Вирівнювання";
 "Left alignment" = "Ліворуч";
@@ -76,7 +75,7 @@
 "Format" = "Формат";
 "Turn off" = "Вимкнути";
 "Normal" = "Нормальний";
-"Warning" = "Попереджнння";
+"Warning" = "Попередження";
 "Critical" = "Критичний";
 "Usage" = "Використання";
 "2 minutes" = "2 хвилини";
@@ -98,6 +97,8 @@
 "15 sec" = "15 сек";
 "30 sec" = "30 сек";
 "60 sec" = "60 сек";
+"Eject" = "Витягнути"; // qwen3.8:27b
+"Enable" = "Увімкнути"; // qwen3.8:27b
 
 // Setup
 "Stats Setup" = "Налаштування";
@@ -112,8 +113,8 @@
 "Select preset" = "Виберіть пресет";
 "select_preset_message" = "Виберіть початковий набір модулів. Ви можете налаштувати все пізніше в налаштуваннях.";
 "Default" = "За замовчуванням";
-"Basic" = "Рекомендований";
-"Recommended" = "Recommended";
+"Basic" = "Базовий";
+"Recommended" = "Рекомендований";
 "Extended" = "Розширений";
 "Start the application automatically when starting your Mac" = "Запускати програму автоматично під час запуску Mac";
 "Do not start the application automatically when starting your Mac" = "Не запускати програму автоматично під час запуску Mac";
@@ -145,17 +146,19 @@
 "No notifications available in this module" = "У цьому модулі немає повідомлень";
 "Open Calendar" = "Відкрити календар";
 "Toggle the module" = "Перемкніть модуль";
+"Preview is unavailable while module is disabled." = "Попередній перегляд недоступний, поки модуль вимкнено.";
 "Open System Stats" = "Відкрити System Stats";
+"Close module settings" = "Закрити налаштування модуля"; // qwen3.8:27b
 
 // Application settings
-"Check for updates" = "Перевіряти оновленя";
+"Check for updates" = "Перевіряти оновлення";
 "At start" = "При включенні";
 "Once per day" = "Раз на день";
 "Once per week" = "Раз на тиждень";
 "Once per month" = "Раз на місяць";
 "Never" = "Ніколи";
-"Check for update" = "Перевірити оновленя";
-"Show icon in dock" = "Показувати іконку в dock";
+"Check for update" = "Перевірити оновлення";
+"Show icon in dock" = "Показувати іконку в Dock";
 "Start at login" = "Запускати при логуванні";
 "Build number" = "Номер збірки";
 "Import settings" = "Імпорт налаштувань";
@@ -164,10 +167,12 @@
 "Pause the Stats" = "Призупинити Stats";
 "Resume the Stats" = "Відновити Stats";
 "Combined modules" = "Комбіновані модулі";
+"Show icon instead of widgets" = "Показувати іконку замість віджетів";
 "Combined details" = "Комбіновані деталі";
 "Spacing" = "Інтервал";
 "Choose file" = "Виберіть файл";
 "Stress tests" = "Стрес-тести";
+"Keep the menubar items position" = "Зберігати розташування елементів панелі меню"; // qwen3.8:27b
 
 // Dashboard
 "Serial number" = "Серійний номер";
@@ -185,13 +190,17 @@
 // Update
 "The latest version of Stats installed" = "Встановлено останню версію";
 "Downloading..." = "Завантаження...";
+"Installing..." = "Встановлюється..."; // qwen3.8:27b
+"Updating..." = "Оновлення..."; // qwen3.8:27b
+"Stats will restart automatically" = "Stats автоматично перезапуститься"; // qwen3.8:27b
 "Current version: " = "Поточна версія:  ";
 "Latest version: " = "Остання версія:  ";
+"Changelog" = "Журнал змін"; // qwen3.8:27b
 
 // Widgets
 "Color" = "Колір";
 "Label" = "Етикетка";
-"Box" = "Коробка"; // translategemma:4b
+"Box" = "Тло";
 "Frame" = "Рамка";
 "Value" = "Значення";
 "Colorize" = "Розфарбувати";
@@ -222,15 +231,16 @@
 "Color of upload" = "Колір висилання";
 "Monospaced font" = "Моноширинний шрифт";
 "Reverse order" = "Зворотній порядок";
-"Chart history" = "Тривалість діаграми";
+"Chart history" = "Історія діаграми";
 "Default color" = "За замовчуванням";
 "Transparent when no activity" = "Прозорий коли немає активності";
 "Constant color" = "Постійний";
 "Custom..." = "Користувацький...";
+"Icon widget" = "Піктограма";
+"Animate icon" = "Анімувати піктограму";
 
 // Module Kit
 "Open module settings" = "Відкрити налаштування модуля";
-"Open widget settings" = "Відкрити налаштування віджета";
 "Update interval" = "Інтервал оновлень";
 "Usage history" = "Історія використання";
 "Details" = "Деталі";
@@ -238,15 +248,17 @@
 "Pictogram" = "Піктограма";
 "Module" = "Модуль";
 "Widgets" = "Віджети";
-"Popup" = "Спливаюче віконо";
-"Notifications" = "Cповіщення";
-"Merge widgets" = "Об’єднайти віджети";
+"Popup" = "Спливаюче вікно";
+"Notifications" = "Сповіщення";
+"Merge widgets" = "Об’єднати віджети";
 "No available widgets to configure" = "Немає доступних віджетів для налаштування";
 "No options to configure for the popup in this module" = "У цьому модулі немає параметрів для налаштування спливаючого вікна";
 "Process" = "Процес";
 "Kill process" = "Завершити процес";
 "Keyboard shortcut" = "Комбінація клавіш";
 "Listening..." = "Слухаю...";
+"Open in browser" = "Відкрити у браузері"; // qwen3.8:27b
+"Open module" = "Відкрити модуль"; // qwen3.8:27b
 
 // Modules
 "Number of top processes" = "Кількість процесів";
@@ -276,17 +288,20 @@
 "CPU usage threshold" = "Поріг використання процесора";
 "Efficiency cores" = "Енергоефективні ядра";
 "Performance cores" = "Високопродуктивні ядра";
+"Super cores" = "Суперядра"; // qwen3.8:27b
 "System color" = "Системний колір";
 "User color" = "Колір користувача";
 "Idle color" = "Колір простою";
 "Cluster grouping" = "Кластерне групування";
 "Efficiency cores color" = "Колір енергоефективних ядер";
 "Performance cores color" = "Колір високопродуктивних ядер";
+"Super cores color" = "Колір суперядер"; // qwen3.8:27b
 "Total load" = "Загальне використання";
 "System load" = "Використання системи";
 "User load" = "Використання користувача";
 "Efficiency cores load" = "Використання енергоефективних ядер";
 "Performance cores load" = "Використання високопродуктивних ядер";
+"Super cores load" = "Навантаження суперядер"; // qwen3.8:27b
 "All cores" = "Всі ядра";
 "Load per core" = "Навантаження на ядро"; // translategemma:4b
 "Efficiency core" = "Енергоефективне ядро";
@@ -300,10 +315,16 @@
 "Model" = "Модель";
 "Status" = "Статус";
 "Utilization" = "Використання";
-"Render utilization" = "Використання render";
-"Tiler utilization" = "Використання tiler";
+"Renderer utilization" = "Використання рендерера";
+"Renderer utilization history" = "Історія використання рендерера"; // qwen3.8:27b
+"Tiler utilization" = "Використання тайлера";
+"Tiler utilization history" = "Історія використання тайлера"; // qwen3.8:27b
 "GPU usage threshold" = "Поріг використання графічного процесора";
 "GPU usage is" = "Використання графічного процесора %0";
+"ANE utilization" = "Використання ANE"; // qwen3.8:27b
+"ANE utilization history" = "Історія використання ANE"; // qwen3.8:27b
+"FPS history" = "Історія FPS"; // qwen3.8:27b
+"GPU utilization history" = "Історія використання GPU"; // qwen3.8:27b
 
 // RAM
 "Memory usage" = "Навантаженість пам’яті";
@@ -325,6 +346,8 @@
 "Free memory (less than)" = "Вільна пам'ять (менше ніж)";
 "Swap size" = "Розмір swap";
 "Free RAM is" = "Вільна оперативна пам'ять %0";
+"Pressure" = "Тиск"; // qwen3.8:27b
+"Pressure level" = "Рівень тиску"; // qwen3.8:27b
 
 // Disk
 "Show removable disks" = "Показати зйомні диски";
@@ -346,20 +369,24 @@
 "Encrypted" = "Шифрування";
 "Writable" = "Записуваний";
 "Drives" = "Диски";
-"SMART data" = "SMART дані";
-"ATA SMART data" = "ATA SMART дані";
 "Power cycles" = "Кількість циклів";
 "Power on hours" = "Години роботи";
 "Critical warning" = "Критичне попередження";
-"Available spare" = "Доступний простір";
+"Available spare" = "Доступний резерв";
 "Unsafe shutdowns" = "Небезпечні вимкнення";
 "Media errors" = "Помилки медіа";
 "Threshold" = "Поріг";
-"Spare below threshold" = "Запасний елемент нижче порогу";
+"Spare below threshold" = "Резерв нижче порогу";
 "Temperature out of range" = "Температура поза межами допустимого діапазону";
 "Reliability degraded" = "Зниження надійності";
 "Read-only mode" = "Режим лише для читання";
 "Backup failed" = "Не вдалося створити резервну копію";
+"All disks" = "Усі диски"; // qwen3.8:27b
+"Disk details" = "Деталі диска"; // qwen3.8:27b
+"Main color" = "Основний колір"; // qwen3.8:27b
+"Read / Write history" = "Історія читання / запису"; // qwen3.8:27b
+"mounted" = "підключений"; // qwen3.8:27b
+"removable" = "змінний"; // qwen3.8:27b
 
 // Sensors
 "Celsius" = "Цельсія";
@@ -373,12 +400,12 @@
 "Show unknown sensors" = "Показати невідомі датчики";
 "Install fan helper" = "Встановити помічник для вентилятора";
 "Uninstall fan helper" = "Видалити помічник для вентилятора";
-"Approve in System Settings ▸ Login Items" = "Approve in System Settings ▸ Login Items";
-"Fan helper needs your approval" = "Fan helper needs your approval";
-"To control the fans, enable Stats in System Settings ▸ Login Items." = "To control the fans, enable Stats in System Settings ▸ Login Items.";
-"Open Login Items" = "Open Login Items";
-"Could not enable the fan helper" = "Could not enable the fan helper";
-"Open System Settings ▸ Login Items, make sure Stats is allowed in the background, then try again." = "Open System Settings ▸ Login Items, make sure Stats is allowed in the background, then try again.";
+"Approve in System Settings ▸ Login Items" = "Дозволити в Системних налаштуваннях ▸ Елементи входу"; // qwen3.8:27b
+"Fan helper needs your approval" = "Допоміжник вентилятора потребує вашого дозволу"; // qwen3.8:27b
+"To control the fans, enable Stats in System Settings ▸ Login Items." = "Щоб керувати вентиляторами, увімкніть Stats у Системних налаштуваннях ▸ Елементи входу."; // qwen3.8:27b
+"Open Login Items" = "Відкрити засоби входу"; // qwen3.8:27b
+"Could not enable the fan helper" = "Не вдалося увімкнути допоміжний процес вентилятора"; // qwen3.8:27b
+"Open System Settings ▸ Login Items, make sure Stats is allowed in the background, then try again." = "Відкрийте Параметри системи ▸ Елементи входу, переконайтеся, що Stats дозволений у фоновому режимі, потім спробуйте ще раз."; // qwen3.8:27b
 "Fan value" = "Значення вентилятора";
 "Turn off fan" = "Вимкнути вентилятор";
 "You are going to turn off the fan. This is not recommended action that can damage your mac, are you sure you want to do that?" = "Ви збираєтеся вимкнути вентилятор. Це не рекомендована дія, яка може зламати ваш Mac. Ви впевнені, що хочете це зробити?";
@@ -389,6 +416,8 @@
 "Sensor to show" = "Активний датчик";
 
 // Network
+"Allow access to Wi-Fi details" = "Дозволити доступ до деталей Wi-Fi";
+"Open Location Settings" = "Відкрити налаштування геолокації";
 "Uploading" = "Висилання";
 "Downloading" = "Завантаження";
 "Public IP" = "Публічний IP";
@@ -428,14 +457,20 @@
 "Internet connection lost" = "З’єднання з інтернетом втрачено";
 "Internet connection established" = "З’єднання з інтернетом відновлено";
 "Show country code instead of emoji" = "Показувати код країни замість емодзі";
+"DNS Server" = "Сервер DNS"; // qwen3.8:27b
+"Noise" = "Шум"; // qwen3.8:27b
+"Signal" = "Сигнал"; // qwen3.8:27b
+"Speed" = "Швидкість"; // qwen3.8:27b
+"Network interface changed" = "Мережевий інтерфейс змінено"; // qwen3.8:27b
+"WiFi network changed" = "Мережа Wi-Fi змінилася"; // qwen3.8:27b
+"This will be visible in the text widget" = "Це буде видно у текстовому віджеті"; // qwen3.8:27b
 
 // Battery
 "Source" = "Джерело";
-"AC Power" = "Мережа";
+"AC Power" = "Мережне живлення";
 "Battery Power" = "Акумулятор";
 "Time" = "Час";
 "Health" = "Стан акумулятора";
-"Amperage" = "Сила струму";
 "Voltage" = "Напруга";
 "Cycles" = "Кількість циклів";
 "Temperature" = "Температура";
@@ -457,17 +492,19 @@
 "Time and percentage" = "Час і проценти";
 "Time format" = "Формат часу";
 "Hide additional information when full" = "Приховати додаткову інформацію, якщо акумулятор заряджений";
-"Percentage inside the icon" = "Відсоток всередині віджету";
+"Percentage inside the icon" = "Відсоток всередині іконки";
 "Charger state inside the battery" = "Стан зарядки всередині акумулятора";
-"Max capacity" = "Max capacity";
-"Designed capacity" = "Designed capacity";
-"On hold" = "On hold";
-"On battery" = "On battery";
-"Plugged in" = "Plugged in";
-"Charging" = "Charging";
+"Max capacity" = "Максимальна ємність"; // qwen3.8:27b
+"Designed capacity" = "Проектна ємність"; // qwen3.8:27b
+"On hold" = "На паузі"; // qwen3.8:27b
+"On battery" = "Від акумулятора"; // qwen3.8:27b
+"Plugged in" = "Підключено"; // qwen3.8:27b
+"Charging" = "Зарядка"; // qwen3.8:27b
+"Level" = "Рівень"; // qwen3.8:27b
 
 // Bluetooth
 "No Bluetooth devices are available" = "Немає пристроїв Bluetooth";
+"Bluetooth threshold" = "Поріг Bluetooth"; // qwen3.8:27b
 
 // Clock
 "Time zone" = "Часовий пояс";
@@ -479,8 +516,8 @@
 "Delete selected clock" = "Видалити вибраний годинник";
 "Help with datetime format" = "Довідка з форматом дати й часу";
 "Sync with NTP server" = "Синхронізація з сервером NTP";
-"Previous month" = "Previous month";
-"Next month" = "Next month";
+"Previous month" = "Попередній місяць"; // qwen3.8:27b
+"Next month" = "Наступний місяць"; // qwen3.8:27b
 
 // Colors
 "Based on utilization" = "На основі використання";
@@ -498,7 +535,7 @@
 "Red" = "Червоний";
 "Second red" = "Інший червоний";
 "Green" = "Зелений";
-"Second green" = "Червоний зелений";
+"Second green" = "Інший зелений";
 "Blue" = "Блакитний";
 "Second blue" = "Інший блакитний";
 "Yellow" = "Жовтий";
@@ -512,5 +549,26 @@
 "Cyan" = "Циан";
 "Magenta" = "Пурпуровий";
 "Pink" = "Рожевий";
-"Teal" = "Чиряковий";
+"Teal" = "Бірюзовий";
 "Indigo" = "Індіго";
+
+// System Stats
+"Authorization" = "Авторизація"; // qwen3.8:27b
+"Identificator" = "Ідентифікатор"; // qwen3.8:27b
+"Plan" = "План"; // qwen3.8:27b
+"Monitoring" = "Моніторинг"; // qwen3.8:27b
+"Control" = "Керування"; // qwen3.8:27b
+"Update" = "Оновити"; // qwen3.8:27b
+"Sign in" = "Увійти"; // qwen3.8:27b
+"Sign out" = "Вийти"; // qwen3.8:27b
+"Deregister" = "Зняти з реєстрації"; // qwen3.8:27b
+"Hosts" = "Хости"; // qwen3.8:27b
+"Machines" = "Комп'ютери"; // qwen3.8:27b
+"No hosts yet" = "Ще немає хостів"; // qwen3.8:27b
+"No machines yet" = "Поки немає машин"; // qwen3.8:27b
+"Get notified when a device goes offline or hits a threshold" = "Отримувати сповіщення, коли пристрій виходить з мережі або досягає порогу"; // qwen3.8:27b
+"It is not recommended to enable remote control unless you know what you are doing." = "Не рекомендується вмикати віддалене керування, якщо ви не знаєте, що робите."; // qwen3.8:27b
+"Live CPU, RAM, disk and network metrics" = "Живі метрики CPU, RAM, диска та мережі"; // qwen3.8:27b
+"Login to System Stats to see your devices" = "Увійдіть у System Stats, щоб переглянути свої пристрої"; // qwen3.8:27b
+"Monitor HTTP, ICMP and custom endpoints" = "Моніторинг HTTP, ICMP та власних кінцевих точок"; // qwen3.8:27b
+"Monitor and control your Macs from anywhere. Sign in to your System Stats account to see all your devices and hosts in one place." = "Спостерігайте та керуйте своїми Mac з будь-якого місця. Увійдіть у свій акаунт System Stats, щоб побачити всі ваші пристрої та хости в одному місці."; // qwen3.8:27b

@@ -111,8 +111,15 @@
 		5E0C63682FBE5F0000D9BA3E /* reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0C63672FBE5F0000D9BA3E /* reader.swift */; };
 		5E0C63702FBE4A0000D9BA3E /* popup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0C636F2FBE4A0000D9BA3E /* popup.swift */; };
 		5E6DF2573007B23A00D696BD /* uninstall.sh in Copy Files */ = {isa = PBXBuildFile; fileRef = 5CFE494129265418000F2856 /* uninstall.sh */; };
+		5E828A003074086000DB0CA0 /* Icon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8289FF3074085D00DB0CA0 /* Icon.swift */; };
+		5E8E7354308E1D1100126136 /* Stats.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E8E7353308E1D1100126136 /* Stats.icon */; };
 		5EC1B2E52E2FEAFB007042A6 /* UnitedWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC1B2E42E2FEAFB007042A6 /* UnitedWidget.swift */; };
+		5EE5C0B93062FEA400E7DAB4 /* install.sh in Resources */ = {isa = PBXBuildFile; fileRef = 5EE5C0B83062FEA400E7DAB4 /* install.sh */; };
 		5EE8037F29C36BDD0063D37D /* portal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EE8037E29C36BDD0063D37D /* portal.swift */; };
+		8B3025000000000000000001 /* Bluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3025000000000000000002 /* Bluetooth.swift */; };
+		8B3025000000000000000003 /* Bluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A11AACF266FD77F000C1C05 /* Bluetooth.framework */; };
+		8B3679000000000000000001 /* Disk.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9AF9EE0224648751005D2270 /* Disk.framework */; };
+		8B3679000000000000000002 /* Disk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3679000000000000000003 /* Disk.swift */; };
 		9A045EB72594F8D100ED58F2 /* Dashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A045EB62594F8D100ED58F2 /* Dashboard.swift */; };
 		9A11AAD6266FD77F000C1C05 /* Bluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A11AACF266FD77F000C1C05 /* Bluetooth.framework */; };
 		9A11AAD7266FD77F000C1C05 /* Bluetooth.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 9A11AACF266FD77F000C1C05 /* Bluetooth.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -656,12 +663,17 @@
 		5E0C63652FBE3F4E00D9BA3E /* settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = settings.swift; sourceTree = "<group>"; };
 		5E0C63672FBE5F0000D9BA3E /* reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = reader.swift; sourceTree = "<group>"; };
 		5E0C636F2FBE4A0000D9BA3E /* popup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = popup.swift; sourceTree = "<group>"; };
+		5E8289FF3074085D00DB0CA0 /* Icon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Icon.swift; sourceTree = "<group>"; };
+		5E8E7353308E1D1100126136 /* Stats.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = Stats.icon; sourceTree = "<group>"; };
 		5EC1B2E42E2FEAFB007042A6 /* UnitedWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnitedWidget.swift; sourceTree = "<group>"; };
+		5EE5C0B83062FEA400E7DAB4 /* install.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = install.sh; sourceTree = "<group>"; };
 		5EE8037E29C36BDD0063D37D /* portal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = portal.swift; sourceTree = "<group>"; };
 		62BA5F74254810C8009D0AC2 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
 		63A07F97275018DF00352C46 /* ca */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ca; path = ca.lproj/Localizable.strings; sourceTree = "<group>"; };
 		"6ed2e290-b69e-4630-8e38-1ceafc12e572" /* ta */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ta; path = ta.lproj/Localizable.strings; sourceTree = "<group>"; };
 		7A19DAE52552C326001B192F /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
+		8B3025000000000000000002 /* Bluetooth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bluetooth.swift; sourceTree = "<group>"; };
+		8B3679000000000000000003 /* Disk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Disk.swift; sourceTree = "<group>"; };
 		9068FE5F25AC4516006FCAA6 /* cs */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = cs; path = cs.lproj/Localizable.strings; sourceTree = "<group>"; };
 		9585D8482830523E007EC0D7 /* sl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sl; path = sl.lproj/Localizable.strings; sourceTree = "<group>"; };
 		9733417025C7340700BD4D9C /* ro */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ro; path = ro.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -795,7 +807,9 @@
 		9AF9EE1024648ADC005D2270 /* readers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = readers.swift; sourceTree = "<group>"; };
 		9AF9EE12246492E8005D2270 /* config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = config.plist; sourceTree = "<group>"; };
 		9AF9EE192464A7B3005D2270 /* config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = config.plist; sourceTree = "<group>"; };
+		B4B0D81A85B54E94B7118C30 /* build-leveldb.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = "build-leveldb.py"; sourceTree = "<group>"; };
 		B8F0D4F1259D19B100AAFAAF /* pt-PT */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "pt-PT"; path = "pt-PT.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		BB51D61D9DB641DD896DCA6C /* Snappy-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Snappy-LICENSE.txt"; sourceTree = "<group>"; };
 		BB9E59E725BB5F5E004AED95 /* hu */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = hu; path = hu.lproj/Localizable.strings; sourceTree = "<group>"; };
 		C904AECF255939DB004A9EBC /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/Localizable.strings; sourceTree = "<group>"; };
 		CBF35F8F258CF80000B2BA41 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -921,6 +935,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8B3025000000000000000003 /* Bluetooth.framework in Frameworks */,
+				8B3679000000000000000001 /* Disk.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1010,6 +1026,7 @@
 				5C4E8BC32B6EF65E00F148B6 /* libleveldb.a */,
 				5C4E8BA02B6EEE8E00F148B6 /* lldb.m */,
 				5C4E8B9F2B6EEE6D00F148B6 /* lldb.h */,
+				BB51D61D9DB641DD896DCA6C /* Snappy-LICENSE.txt */,
 			);
 			path = lldb;
 			sourceTree = "<group>";
@@ -1169,6 +1186,7 @@
 				9A9B8C9C27149A3700218374 /* Tachometer.swift */,
 				9AEBBE4C28D773430082A6A1 /* Dot.swift */,
 				5CAA50712C8E417700B13E13 /* Text.swift */,
+				5E8289FF3074085D00DB0CA0 /* Icon.swift */,
 			);
 			path = Widgets;
 			sourceTree = "<group>";
@@ -1227,9 +1245,11 @@
 			isa = PBXGroup;
 			children = (
 				9A2848012666AB2F00EC1F6D /* updater.sh */,
+				5EE5C0B83062FEA400E7DAB4 /* install.sh */,
 				5CFE494129265418000F2856 /* uninstall.sh */,
 				9A46BF35266D6E17001A1117 /* i18n.py */,
 				5CFE494329265421000F2856 /* changelog.py */,
+				B4B0D81A85B54E94B7118C30 /* build-leveldb.py */,
 				5C0A2A89292A5B4D009B4C1F /* SMJobBlessUtil.py */,
 			);
 			path = scripts;
@@ -1239,6 +1259,7 @@
 			isa = PBXGroup;
 			children = (
 				9A6CFC0022A1C9F5001E782D /* Assets.xcassets */,
+				5E8E7353308E1D1100126136 /* Stats.icon */,
 				9A27D4A925389EFD001BB651 /* Stats.entitlements */,
 				9A141101229E721200D29793 /* Info.plist */,
 				9A9B25BD24F7DE2B00C3CCE6 /* Localizable.strings */,
@@ -1349,6 +1370,8 @@
 				9AAC5E2E280ACC120043D892 /* Info.plist */,
 				9AAC5E40280ACC210043D892 /* RAM.swift */,
 				369463B2B7EA4AF0A895A9B6 /* Kit.swift */,
+				8B3025000000000000000002 /* Bluetooth.swift */,
+				8B3679000000000000000003 /* Disk.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -1888,7 +1911,7 @@
 					New,
 				);
 				LastSwiftUpdateCheck = 2650;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 2710;
 				ORGANIZATIONNAME = "Serhiy Mytrovtsiy";
 				TargetAttributes = {
 					5C22299C29CCB3C400F00E69 = {
@@ -2069,6 +2092,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A6CFC0122A1C9F5001E782D /* Assets.xcassets in Resources */,
+				5E8E7354308E1D1100126136 /* Stats.icon in Resources */,
 				9A9B25BB24F7DE2B00C3CCE6 /* Localizable.strings in Resources */,
 				5D1C0A012EAA11110000B006 /* iOSBattery.config.plist in Resources */,
 				5D1C0A012EAA22220000B006 /* AITokens.config.plist in Resources */,
@@ -2083,6 +2107,7 @@
 				9A46BF36266D6E17001A1117 /* i18n.py in Resources */,
 				9A2848082666AB3000EC1F6D /* updater.sh in Resources */,
 				5CFE494429265421000F2856 /* changelog.py in Resources */,
+				5EE5C0B93062FEA400E7DAB4 /* install.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2314,6 +2339,7 @@
 				9A2847642666AA2700EC1F6D /* Battery.swift in Sources */,
 				9A28480B2666AB3000EC1F6D /* Charts.swift in Sources */,
 				9A2847632666AA2700EC1F6D /* Mini.swift in Sources */,
+				5E828A003074086000DB0CA0 /* Icon.swift in Sources */,
 				5CF2210D2B1E7EAF006C583F /* notifications.swift in Sources */,
 				9A6EEBBE2685259500897371 /* Logger.swift in Sources */,
 				5C4E8BC72B6EF98800F148B6 /* DB.swift in Sources */,
@@ -2401,6 +2427,8 @@
 			files = (
 				9AAC5E41280ACC210043D892 /* RAM.swift in Sources */,
 				4A05F9BD83C04F70BFFF7F37 /* Kit.swift in Sources */,
+				8B3025000000000000000001 /* Bluetooth.swift in Sources */,
+				8B3679000000000000000002 /* Disk.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3146,7 +3174,7 @@
 		9A141106229E721200D29793 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Stats;
 				CODE_SIGN_ENTITLEMENTS = "Stats/Supporting Files/Stats.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
@@ -3168,7 +3196,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 3.0.12;
+				MARKETING_VERSION = 3.0.23;
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = eu.exelban.Stats;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3182,7 +3210,7 @@
 		9A141107229E721200D29793 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Stats;
 				CODE_SIGN_ENTITLEMENTS = "Stats/Supporting Files/Stats.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
@@ -3204,7 +3232,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 3.0.12;
+				MARKETING_VERSION = 3.0.23;
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = eu.exelban.Stats;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3289,7 +3317,6 @@
 		9A343538243E26A0006B19F9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LaunchAtLogin/LaunchAtLogin.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -3316,7 +3343,6 @@
 		9A343539243E26A0006B19F9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LaunchAtLogin/LaunchAtLogin.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;

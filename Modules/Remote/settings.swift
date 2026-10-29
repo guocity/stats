@@ -113,8 +113,8 @@ internal class Settings: NSStackView, Settings_v {
               let groups = self.groups,
               let order = self.order else { return }
         
-        let machineIndex = Dictionary(uniqueKeysWithValues: order.machines.enumerated().map { ($1, $0) })
-        let hostIndex = Dictionary(uniqueKeysWithValues: order.hosts.enumerated().map { ($1, $0) })
+        let machineIndex = Dictionary(order.machines.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let hostIndex = Dictionary(order.hosts.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         
         let sortedMachines = machines.sorted { a, b in
             let ia = machineIndex[a.id] ?? Int.max
@@ -129,7 +129,7 @@ internal class Settings: NSStackView, Settings_v {
             return a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
         }
         
-        let groupById = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+        let groupById = Dictionary(groups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let orderedGroups = self.depthFirstGroups(groups: groups, groupById: groupById)
         
         self.machinesList.update(machines: sortedMachines, orderedGroups: orderedGroups, groupById: groupById)
@@ -253,7 +253,7 @@ private class HeroView: NSView {
             bullets.addArrangedSubview(self.bulletRow(line))
         }
         
-        let loginButton = NSButton(title: localizedString("Login"), target: self, action: #selector(self.loginAction))
+        let loginButton = NSButton(title: localizedString("Sign in"), target: self, action: #selector(self.loginAction))
         loginButton.bezelStyle = .rounded
         loginButton.keyEquivalent = "\r"
         loginButton.controlSize = .large

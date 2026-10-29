@@ -11,7 +11,6 @@
 
 import Cocoa
 import Kit
-import WidgetKit
 
 public struct stats: Codable {
     var read: Int64 = 0
@@ -46,8 +45,6 @@ internal func smartCriticalWarnings(_ value: Int) -> [String] {
 }
 
 public struct drive: Codable {
-    var parent: io_object_t = 0
-    
     var uuid: String = ""
     var mediaName: String = ""
     var BSDName: String = ""
@@ -160,19 +157,6 @@ public class Disks: Codable, RemoteType {
         self.array[idx].free = newValue
     }
     
-    func updateReadWrite(_ idx: Int, read: Int64, write: Int64) {
-        self.array[idx].activity.readBytes = read
-        self.array[idx].activity.writeBytes = write
-    }
-    
-    func updateRead(_ idx: Int, newValue: Int64) {
-        self.array[idx].activity.read = newValue
-    }
-    
-    func updateWrite(_ idx: Int, newValue: Int64) {
-        self.array[idx].activity.write = newValue
-    }
-    
     func updateSMARTData(_ idx: Int, smart: smart_t?) {
         self.array[idx].smart = smart
     }
@@ -202,10 +186,7 @@ public struct Disk_process: Process_p, Codable {
     public var pid: Int
     public var name: String
     public var icon: NSImage {
-        if let app = NSRunningApplication(processIdentifier: pid_t(self.pid)) {
-            return app.icon ?? Constants.defaultProcessIcon
-        }
-        return Constants.defaultProcessIcon
+        ProcessIconCache.shared.icon(for: self.pid)
     }
     
     var read: Int
@@ -235,6 +216,7 @@ public class Disk: Module {
     private var capacityReader: CapacityReader?
     private var activityReader: ActivityReader?
     private var processReader: ProcessReader?
+    private var smartReader: SMARTReader?
     
     private var selectedDisk: String = ""
     
@@ -274,6 +256,12 @@ public class Disk: Module {
         self.processReader = ProcessReader(.disk) { [weak self] value in
             if let list = value {
                 self?.popupView.processCallback(list)
+                self?.previewView.processCallback(list)
+            }
+        }
+        self.smartReader = SMARTReader(.disk) { [weak self] value in
+            if let value {
+                self?.SMARTCallback(value)
             }
         }
         
@@ -285,18 +273,23 @@ public class Disk: Module {
         }
         self.settingsView.callback = { [weak self] in
             self?.capacityReader?.read()
+            self?.smartReader?.read()
         }
         self.settingsView.setInterval = { [weak self] value in
             self?.capacityReader?.setInterval(value)
         }
+        self.settingsView.setSMARTInterval = { [weak self] value in
+            self?.smartReader?.setInterval(value)
+        }
         self.settingsView.callbackWhenUpdateNumberOfProcesses = { [weak self] in
             self?.popupView.numberOfProcessesUpdated()
+            self?.previewView.numberOfProcessesUpdated()
             DispatchQueue.global(qos: .background).async {
                 self?.processReader?.read()
             }
         }
         
-        self.setReaders([self.capacityReader, self.activityReader, self.processReader])
+        self.setReaders([self.capacityReader, self.activityReader, self.processReader, self.smartReader])
     }
     
     private func capacityCallback(_ value: Disks) {
@@ -365,11 +358,7 @@ public class Disk: Module {
         }
         
         if self.systemWidgetsUpdatesState {
-            if isWidgetActive(self.userDefaults, [Disk_entry.kind, "UnitedWidget"]), let blobData = try? JSONEncoder().encode(d) {
-                self.userDefaults?.set(blobData, forKey: "Disk@CapacityReader")
-            }
-            WidgetCenter.shared.reloadTimelines(ofKind: Disk_entry.kind)
-            WidgetCenter.shared.reloadTimelines(ofKind: "UnitedWidget")
+            SystemWidgetUpdates.shared.update(d, key: "Disk@CapacityReader", kinds: [Disk_entry.kind, "UnitedWidget"], defaults: self.userDefaults)
         }
     }
     
@@ -399,5 +388,14 @@ public class Disk: Module {
             default: break
             }
         }
+    }
+    
+    private func SMARTCallback(_ value: Disks) {
+        guard self.enabled else { return }
+        
+        DispatchQueue.main.async(execute: {
+            self.popupView.smartCallback(value)
+        })
+        self.previewView.smartCallback(value)
     }
 }

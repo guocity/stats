@@ -13,6 +13,15 @@
 import Cocoa
 import QuartzCore
 
+private func sanitized(_ values: [ColorValue]) -> [ColorValue] {
+    values.map { v in
+        guard !v.value.isFinite else { return v }
+        var clean = ColorValue(0, color: v.color)
+        clean.ts = v.ts
+        return clean
+    }
+}
+
 internal func scaleValue(scale: Scale = .linear, value: Double, maxValue: Double, zeroValue: Double, maxHeight: CGFloat, limit: Double) -> CGFloat {
     var value = value
     if scale == .none && value > 1 && maxValue != 0 {
@@ -65,49 +74,83 @@ internal func scaleValue(scale: Scale = .linear, value: Double, maxValue: Double
     return y
 }
 
-private func drawToolTip(_ frame: NSRect, _ point: CGPoint, _ size: CGSize, value: String, subtitle: String? = nil) {
+private func drawToolTip(_ frame: NSRect, _ point: CGPoint, value: String, subtitle: String? = nil) {
     guard !value.isEmpty else { return }
     
-    let style = NSMutableParagraphStyle()
-    style.alignment = .left
-    var position: CGPoint = point
-    let textHeight: CGFloat = subtitle != nil ? 22 : 12
-    let valueOffset: CGFloat = subtitle != nil ? 11 : 1
+    let compact = frame.height < 100 || frame.width < 220
+    let margin: CGFloat = compact ? 3 : 6
+    let available = frame.insetBy(dx: margin, dy: margin)
+    let paddingX: CGFloat = compact ? 6 : 10
+    let paddingY: CGFloat = compact ? 3 : 7
+    let spacing: CGFloat = compact ? 1 : 3
+    let gap: CGFloat = compact ? 8 : 12
     
-    position.x = max(frame.origin.x, min(position.x, frame.origin.x + frame.size.width - size.width))
-    position.y = max(frame.origin.y, min(position.y, frame.origin.y + frame.size.height - textHeight - 2))
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineBreakMode = .byTruncatingTail
     
-    if position.x + size.width > frame.size.width+frame.origin.x {
-        position.x = point.x - size.width
-        style.alignment = .right
-    }
-    if position.y + textHeight > size.height {
-        position.y = point.y - textHeight - 20
-    }
-    if position.y < 2 {
-        position.y = 2
-    }
+    let valueString = NSAttributedString(string: value, attributes: [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: compact ? 11 : 12, weight: .semibold),
+        .foregroundColor: NSColor.labelColor,
+        .paragraphStyle: paragraph
+    ])
     
-    let box = NSBezierPath(roundedRect: NSRect(x: position.x-3, y: position.y-2, width: size.width, height: textHeight+2), xRadius: 2, yRadius: 2)
-    NSColor.gray.setStroke()
-    box.stroke()
-    (isDarkMode ? NSColor.black : NSColor.white).withAlphaComponent(0.8).setFill()
+    let subtitleString = NSAttributedString(string: subtitle ?? "", attributes: [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: compact ? 9 : 10, weight: .regular),
+        .foregroundColor: NSColor.secondaryLabelColor,
+        .paragraphStyle: paragraph
+    ])
+    
+    let valueHeight = ceil(valueString.size().height)
+    let subtitleHeight = ceil(subtitleString.size().height)
+    let showSubtitle = subtitle != nil && valueHeight + subtitleHeight + spacing + paddingY*2 <= available.height
+    
+    let width = min(
+        ceil(max(valueString.size().width, showSubtitle ? subtitleString.size().width : 0)) + paddingX*2,
+        available.width
+    )
+    let height = valueHeight + (showSubtitle ? subtitleHeight + spacing : 0) + paddingY*2
+    guard width > paddingX*2, height <= available.height else { return }
+    
+    let x = point.x + width + gap > available.maxX ? point.x - width - gap : point.x + gap
+    let y = point.y + height + gap > available.maxY ? point.y - height - gap : point.y + gap
+    let rect = CGRect(
+        x: max(available.minX, min(x, available.maxX - width)),
+        y: max(available.minY, min(y, available.maxY - height)),
+        width: width,
+        height: height
+    )
+    
+    let radius: CGFloat = compact ? 6 : 8
+    let box = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+    
+    NSGraphicsContext.saveGraphicsState()
+    let shadow = NSShadow()
+    shadow.shadowColor = NSColor.black.withAlphaComponent(0.12)
+    shadow.shadowBlurRadius = compact ? 4 : 8
+    shadow.shadowOffset = NSSize(width: 0, height: compact ? -1 : -2)
+    shadow.set()
+    
+    NSColor.windowBackgroundColor.setFill()
     box.fill()
+    NSGraphicsContext.restoreGraphicsState()
     
-    var attributes = [
-        NSAttributedString.Key.font: NSFont.systemFont(ofSize: 12, weight: .regular),
-        NSAttributedString.Key.foregroundColor: isDarkMode ? NSColor.white : NSColor.textColor
-    ]
-    var rect = CGRect(x: position.x, y: position.y+valueOffset, width: size.width, height: 12)
-    var str = NSAttributedString.init(string: value, attributes: attributes)
-    str.draw(with: rect)
+    NSColor.separatorColor.setStroke()
+    box.lineWidth = 0.5
+    box.stroke()
     
-    if let subtitle {
-        attributes[NSAttributedString.Key.font] = NSFont.systemFont(ofSize: 9, weight: .medium)
-        attributes[NSAttributedString.Key.foregroundColor] = (isDarkMode ? NSColor.white : NSColor.textColor).withAlphaComponent(0.7)
-        rect = CGRect(x: position.x, y: position.y, width: size.width-8, height: 9)
-        str = NSAttributedString.init(string: subtitle, attributes: attributes)
-        str.draw(with: rect)
+    valueString.draw(in: CGRect(
+        x: rect.minX+paddingX,
+        y: rect.maxY-paddingY-valueHeight,
+        width: width-paddingX*2,
+        height: valueHeight
+    ))
+    if showSubtitle {
+        subtitleString.draw(in: CGRect(
+            x: rect.minX+paddingX,
+            y: rect.minY+paddingY,
+            width: width-paddingX*2,
+            height: subtitleHeight
+        ))
     }
 }
 
@@ -234,7 +277,7 @@ public class LineChartView: ChartView {
         zeroValue: Double = 0.01,
         animation: Bool = true
     ) {
-        self.points = Array(repeating: nil, count: max(num, 1))
+        self.points = Array(repeating: nil, count: max(num, 2))
         self.suffix = suffix
         self.color = color
         self.scale = scale
@@ -472,7 +515,8 @@ public class LineChartView: ChartView {
         }
         
         if isTooltipEnabled, let p = self.cursor, !list.isEmpty {
-            guard p.y <= height + xLegendHeight else { return }
+            let plotRect = CGRect(x: yLegendWidth, y: xLegendHeight, width: chartWidth, height: height)
+            guard plotRect.contains(p) else { return }
             
             var over: (value: DoubleValue, point: CGPoint)?
             var overDist: CGFloat = .greatestFiniteMagnitude
@@ -487,46 +531,31 @@ public class LineChartView: ChartView {
             if let over, let under {
                 let nearest = (overDist < underDist) ? over : under
                 let vLine = NSBezierPath()
-                let hLine = NSBezierPath()
+                vLine.move(to: CGPoint(x: nearest.point.x, y: xLegendHeight))
+                vLine.line(to: CGPoint(x: nearest.point.x, y: height + xLegendHeight))
                 
-                vLine.setLineDash([4, 4], count: 2, phase: 0)
-                hLine.setLineDash([6, 6], count: 2, phase: 0)
-                
-                vLine.move(to: CGPoint(x: p.x, y: xLegendHeight))
-                vLine.line(to: CGPoint(x: p.x, y: height + xLegendHeight))
-                vLine.close()
-                
-                hLine.move(to: CGPoint(x: 0, y: p.y))
-                hLine.line(to: CGPoint(x: self.frame.size.width, y: p.y))
-                hLine.close()
-                
-                NSColor.tertiaryLabelColor.set()
-                
+                NSColor.tertiaryLabelColor.setStroke()
                 vLine.lineWidth = offset
-                hLine.lineWidth = offset
-                
                 vLine.stroke()
-                hLine.stroke()
                 
-                let dotSize: CGFloat = 4
+                let dotSize: CGFloat = 6
                 let path = NSBezierPath(ovalIn: CGRect(
                     x: nearest.point.x-(dotSize/2),
                     y: nearest.point.y-(dotSize/2),
                     width: dotSize,
                     height: dotSize
                 ))
-                NSColor.red.set()
+                NSColor.windowBackgroundColor.setFill()
+                path.fill()
+                lineColor.setStroke()
+                path.lineWidth = 2
                 path.stroke()
                 
                 let date = self.dateFormatter.string(from: nearest.value.ts)
                 let roundedValue = Int(nearest.value.value.rounded(toPlaces: 2) * 100)
                 let strValue = "\(roundedValue)\(suffix)"
                 let value = toolTipFunc != nil ? toolTipFunc!(nearest.value) : strValue
-                let tooltipWidth: CGFloat = 78
-                let tooltipX = nearest.point.x + 4 + tooltipWidth > self.frame.size.width
-                    ? nearest.point.x - tooltipWidth - 4
-                    : nearest.point.x + 4
-                drawToolTip(self.frame, CGPoint(x: tooltipX, y: nearest.point.y+4), CGSize(width: tooltipWidth, height: height), value: value, subtitle: date)
+                drawToolTip(plotRect, nearest.point, value: value, subtitle: date)
             }
         }
     }
@@ -554,6 +583,12 @@ public class LineChartView: ChartView {
     }
     
     public func addValue(_ value: DoubleValue) {
+        var value = value
+        if !value.value.isFinite {
+            let ts = value.ts
+            value = DoubleValue(0)
+            value.ts = ts
+        }
         self.write {
             let n = self.points.count
             guard n > 0 else { return }
@@ -574,9 +609,12 @@ public class LineChartView: ChartView {
         }
         self.onMain { [weak self] in
             guard let self, self.window?.isVisible ?? false else { return }
-            let state = self.read { (n: self.points.count, yLegend: self.yLegend) }
+            let state = self.read { (n: self.points.count, xLegend: self.xLegend, yLegend: self.yLegend) }
             let dx = state.n > 1 ? (self.bounds.width - (state.yLegend ? 30 : 0)) / CGFloat(state.n - 1) : 0
-            guard dx >= 1, !self.stop, self.animationsAllowed else {
+            // Legends share the layer with the plot and must remain stationary.
+            guard dx >= 1, !state.xLegend, !state.yLegend, !self.stop, self.animationsAllowed else {
+                self.layer?.removeAnimation(forKey: "slide")
+                self.lastSlideAt = 0
                 self.needsDisplay = true
                 return
             }
@@ -630,6 +668,7 @@ public class LineChartView: ChartView {
     }
     
     public func reinit(_ num: Int = 60) {
+        let num = max(num, 2)
         self.write {
             guard self.points.count != num else { return }
             let ordered = self.orderedPointsLocked()
@@ -717,7 +756,11 @@ public class LineChartView: ChartView {
             self.xLegend = x
             self.yLegend = y
         }
-        self.displayIfVisible()
+        self.onMain { [weak self] in
+            self?.layer?.removeAnimation(forKey: "slide")
+            self?.lastSlideAt = 0
+            self?.displayIfVisible()
+        }
     }
     
     public override func mouseEntered(with event: NSEvent) {
@@ -1323,36 +1366,31 @@ public class ColumnChartView: ChartView {
             let matchingBlock = list.first(where: { $0.path.contains(p) })
             if let block = matchingBlock {
                 let value = "\(Int(block.value.rounded(toPlaces: 2) * 100))%"
-                let width: CGFloat = block.value == 1 ? 38 : block.value > 0.1 ? 32 : 24
-                let tooltipHeight: CGFloat = 12
-                let gap: CGFloat = 4
-                let tooltipX = min(p.x + gap, self.bounds.width - width)
-                let tooltipY = (self.bounds.height - p.y) < (tooltipHeight + gap) ? (p.y - tooltipHeight - gap - 10) : (p.y + gap)
-                drawToolTip(self.bounds, CGPoint(x: tooltipX, y: tooltipY), CGSize(width: width, height: self.bounds.height), value: value)
+                drawToolTip(self.bounds, p, value: value)
             }
         }
     }
     
     public func setValues(_ values: [ColorValue]) {
-        self.write { self.values = values }
+        self.write { self.values = sanitized(values) }
         self.fadeOrDisplay()
     }
     
     public override func mouseEntered(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.display()
+        self.needsDisplay = true
     }
     public override func mouseMoved(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.display()
+        self.needsDisplay = true
     }
     public override func mouseDragged(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.display()
+        self.needsDisplay = true
     }
     public override func mouseExited(with event: NSEvent) {
         self.cursor = nil
-        self.display()
+        self.needsDisplay = true
     }
     
     public override func updateTrackingAreas() {
@@ -1439,14 +1477,7 @@ public class GridChartView: ChartView {
         
         if let v = hovered, let c = cursor {
             let text = self.dateFormatter.string(from: v.ts)
-            let font = NSFont.systemFont(ofSize: 12, weight: .regular)
-            let tooltipWidth = text.widthOfString(usingFont: font).rounded(.up) + 6
-            let tooltipHeight: CGFloat = 12
-            let tooltipX = c.x + 6 + tooltipWidth > self.frame.size.width
-                ? c.x - tooltipWidth - 6
-                : c.x + 6
-            let tooltipY = c.y + 6
-            drawToolTip(self.frame, CGPoint(x: tooltipX, y: tooltipY), CGSize(width: tooltipWidth, height: tooltipHeight), value: text)
+            drawToolTip(self.bounds, c, value: text)
         }
     }
     
@@ -1559,7 +1590,7 @@ public class BarChartView: ChartView {
     }
     
     public func setValues(_ values: [ColorValue]) {
-        self.write { self.values = values }
+        self.write { self.values = sanitized(values) }
         self.fadeOrDisplay()
     }
 }

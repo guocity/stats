@@ -139,7 +139,7 @@ private class UpdateView: NSView {
         header.spacing = 10
         header.distribution = .equalCentering
         
-        let icon: NSImageView = NSImageView(image: NSImage(named: NSImage.Name("AppIcon"))!)
+        let icon: NSImageView = NSImageView(image: NSImage(named: NSImage.Name("Stats"))!)
         icon.setFrameSize(NSSize(width: 44, height: 44))
         icon.widthAnchor.constraint(equalToConstant: 44).isActive = true
         let title: NSTextField = TextView()
@@ -299,9 +299,56 @@ private class UpdateView: NSView {
     }
     
     @objc private func install() {
-        updater.install(path: self.path) { error in
-            if let error {
-                showAlert("Error update Stats", error, .critical)
+        self.clear()
+        
+        let view: NSStackView = NSStackView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.orientation = .vertical
+        view.alignment = .centerX
+        view.spacing = 4
+        
+        let spinner: NSProgressIndicator = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.startAnimation(nil)
+        
+        let title: NSTextField = TextView()
+        title.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        title.alignment = .center
+        title.stringValue = localizedString("Installing...")
+        
+        let state = NSTextField(wrappingLabelWithString: localizedString("Stats will restart automatically"))
+        state.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        state.alignment = .center
+        state.textColor = .secondaryLabelColor
+        state.isSelectable = false
+        
+        view.addArrangedSubview(spinner)
+        view.setCustomSpacing(12, after: spinner)
+        view.addArrangedSubview(title)
+        view.addArrangedSubview(state)
+        self.addSubview(view)
+        
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: Constants.Settings.margin),
+            view.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -Constants.Settings.margin),
+            view.centerYAnchor.constraint(equalTo: self.centerYAnchor),
+            state.widthAnchor.constraint(equalTo: view.widthAnchor)
+        ])
+        
+        let path = self.path
+        DispatchQueue.global(qos: .userInitiated).async {
+            updater.install(path: path) { error in
+                if let error {
+                    DispatchQueue.main.async {
+                        self.clear()
+                        if let version = self.version {
+                            self.newVersion(version)
+                        }
+                        showAlert("Error update Stats", error, .critical)
+                    }
+                }
             }
         }
     }

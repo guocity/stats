@@ -17,8 +17,8 @@ internal class SensorsReader: Reader<Sensors_List> {
     
     internal var list: Sensors_List = Sensors_List()
     
-    private var lastRead: Date = Date()
-    private let firstRead: Date = Date()
+    private var lastRead: TimeInterval = ProcessInfo.processInfo.systemUptime
+    private let firstRead: TimeInterval = ProcessInfo.processInfo.systemUptime
     private var lastIOSensorsRead: Date? = nil
     
     private var HIDState: Bool {
@@ -40,6 +40,25 @@ internal class SensorsReader: Reader<Sensors_List> {
         dict?.release()
         
         self.list.sensors = self.sensors()
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(self.resetHIDSensors), name: NSWorkspace.didWakeNotification, object: nil)
+    }
+    
+    deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        AppleSiliconSensorsReset()
+    }
+    
+    public override func stop() {
+        super.stop()
+        self.resetHIDSensors()
+    }
+    
+    public override func terminate() {
+        self.resetHIDSensors()
+    }
+    
+    @objc private func resetHIDSensors() {
+        AppleSiliconSensorsReset()
     }
     
     private func sensors() -> [Sensor_p] {
@@ -229,8 +248,9 @@ internal class SensorsReader: Reader<Sensors_List> {
         }
         
         if let PSTRSensor = sensors.first(where: { $0.key == "PSTR"}), PSTRSensor.value > 0 {
-            let sinceLastRead = Date().timeIntervalSince(self.lastRead)
-            let sinceFirstRead = Date().timeIntervalSince(self.firstRead)
+            let now = ProcessInfo.processInfo.systemUptime
+            let sinceLastRead = now - self.lastRead
+            let sinceFirstRead = now - self.firstRead
             
             if let totalIdx = sensors.firstIndex(where: {$0.key == "Total System Consumption"}), sinceLastRead > 0 {
                 sensors[totalIdx].value += PSTRSensor.value * sinceLastRead / 3600
@@ -239,7 +259,7 @@ internal class SensorsReader: Reader<Sensors_List> {
                 }
             }
             
-            self.lastRead = Date()
+            self.lastRead = now
         }
         
         // cut off low dc in voltage
@@ -499,6 +519,7 @@ extension SensorsReader {
                 current + hidSensors.filter({ (s: Sensor_p) in !current.contains(where: { $0.key == s.key }) })
             }
         } else {
+            self.resetHIDSensors()
             self.list.update { current in
                 current.filter({ $0.group != .hid })
             }
@@ -592,11 +613,6 @@ extension SensorsReader {
             self.lastIOSensorsRead = now
             return (0, 0, 0, 0, 0)
         }
-        guard prevCPU != 0 else {
-            self.lastIOSensorsRead = now
-            return (0, 0, 0, 0, 0)
-        } // omit first read
-        
         let elapsed = now.timeIntervalSince(lastIOSensorsRead)
         defer { self.lastIOSensorsRead = now }
         return (

@@ -138,13 +138,15 @@ public class MemoryWidget: WidgetWrapper {
     }
     
     public func setValue(_ value: (String, String), usedPercentage: Double) {
-        self.queue.sync {
+        let updated = self.queue.sync { () -> Bool in
+            guard self.value != value || self.percentage != usedPercentage else { return false }
             self.value = value
             self.percentage = usedPercentage
+            return true
         }
-        
+        guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.display()
+            self.needsDisplay = true
         })
     }
     
@@ -156,7 +158,7 @@ public class MemoryWidget: WidgetWrapper {
         }
         guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.display()
+            self.needsDisplay = true
         })
     }
     

@@ -47,13 +47,12 @@
 "None" = "Brak";
 "Dots" = "Punkty";
 "Arrows" = "Strzałki";
-"Characters" = "Litery";
+"Characters" = "Znaki";
 "Short" = "Krótki";
 "Long" = "Długi";
-"Statistics" = "Statystyki";
 "Max" = "Max";
 "Min" = "Min";
-"Reset" = "Zresetować";
+"Reset" = "Zresetuj";
 "Alignment" = "Wyrównanie";
 "Left alignment" = "Do lewej";
 "Center alignment" = "Centrum";
@@ -86,10 +85,10 @@
 "Read" = "Odczyt";
 "Write" = "Zapis";
 "Frequency" = "Częstotliwość";
-"Save" = "Zapisać";
-"Run" = "Uruchomić";
-"Stop" = "Zatrzymać";
-"Uninstall" = "Odinstalować";
+"Save" = "Zapisz";
+"Run" = "Uruchom";
+"Stop" = "Zatrzymaj";
+"Uninstall" = "Odinstaluj";
 "1 sec" = "1 sek";
 "2 sec" = "2 sek";
 "3 sec" = "3 sek";
@@ -98,6 +97,8 @@
 "15 sec" = "15 sek";
 "30 sec" = "30 sek";
 "60 sec" = "60 sek";
+"Eject" = "Wysuń";
+"Enable" = "Włącz";
 
 // Setup
 "Stats Setup" = "Konfiguracja Stats";
@@ -141,11 +142,13 @@
 "Support the application" = "Wesprzyj rozwój programu";
 "Close application" = "Zamknij program";
 "Open application settings" = "Otwórz ustawienia";
-"Open dashboard" = "Otwórz dashboard";
+"Open dashboard" = "Otwórz panel kontrolny";
 "No notifications available in this module" = "W tym module nie są dostępne żadne powiadomienia";
 "Open Calendar" = "Otwórz kalendarz";
 "Toggle the module" = "Przełącz moduł";
-"Open System Stats" = "Otworzyć System Stats";
+"Preview is unavailable while module is disabled." = "Podgląd jest niedostępny, gdy moduł jest wyłączony.";
+"Open System Stats" = "Otwórz System Stats";
+"Close module settings" = "Zamknij ustawienia modułu";
 
 // Application settings
 "Check for updates" = "Sprawdzaj aktualizacje";
@@ -164,10 +167,12 @@
 "Pause the Stats" = "Wstrzymaj Stats";
 "Resume the Stats" = "Wznów Stats";
 "Combined modules" = "Połączone moduły";
-"Combined details" = "Połączone okno";
+"Show icon instead of widgets" = "Pokaż ikonę zamiast widżetów";
+"Combined details" = "Złączone szczegóły";
 "Spacing" = "Rozstaw";
 "Choose file" = "Wybrać plik";
 "Stress tests" = "Testy obciążeniowe";
+"Keep the menubar items position" = "Zachowuj pozycję elementów paska menu";
 
 // Dashboard
 "Serial number" = "Numer seryjny";
@@ -185,13 +190,17 @@
 // Update
 "The latest version of Stats installed" = "Najnowsza wersja Stats zainstalowana";
 "Downloading..." = "Pobieranie...";
+"Installing..." = "Instalowanie...";
+"Updating..." = "Aktualizowanie...";
+"Stats will restart automatically" = "Stats zostanie automatycznie uruchomiony ponownie";
 "Current version: " = "Aktualna wersja: ";
 "Latest version: " = "Najnowsza wersja: ";
+"Changelog" = "Dziennik zmian";
 
 // Widgets
 "Color" = "Kolor";
 "Label" = "Etykieta";
-"Box" = "Pudełko";
+"Box" = "Tło";
 "Frame" = "Ramka";
 "Value" = "Wartość";
 "Colorize" = "Kolorowanie";
@@ -227,10 +236,11 @@
 "Transparent when no activity" = "Przejrzysty gdy nie ma żadnej aktywności";
 "Constant color" = "Stały";
 "Custom..." = "Niestandardowy...";
+"Icon widget" = "Ikona";
+"Animate icon" = "Animuj ikonę";
 
 // Module Kit
 "Open module settings" = "Otwórz ustawienia modułu";
-"Open widget settings" = "Otwórz ustawienia widgetu";
 "Update interval" = "Interwał odświeżania";
 "Usage history" = "Historia użycia";
 "Details" = "Szczegóły";
@@ -244,13 +254,15 @@
 "No available widgets to configure" = "Brak dostępnych widżetów do konfiguracji";
 "No options to configure for the popup in this module" = "Brak opcji do skonfigurowania dla okienka w tym module";
 "Process" = "Proces";
-"Kill process" = "Zamknąć proces";
+"Kill process" = "Zamknij proces";
 "Keyboard shortcut" = "Skrót klawiszowy";
-"Listening..." = "Oczekuje...";
+"Listening..." = "Nasłuchuję...";
+"Open in browser" = "Otwórz w przeglądarce";
+"Open module" = "Otwórz moduł";
 
 // Modules
-"Number of top processes" = "Liczba procesów";
-"Update interval for top processes" = "Interwał odświeżania procesów";
+"Number of top processes" = "Liczba najaktywniejszych procesów";
+"Update interval for top processes" = "Interwał odświeżania najaktywniejszych procesów";
 "Chart color" = "Kolor wykresu";
 "Main chart scaling" = "Skalowanie wykresu głównego";
 "Scale value" = "Wartość skali";
@@ -276,17 +288,20 @@
 "CPU usage threshold" = "Próg wykorzystania procesora";
 "Efficiency cores" = "Rdzenie energooszczędne";
 "Performance cores" = "Rdzenie wydajnościowe";
+"Super cores" = "Super rdzenie";
 "System color" = "Kolor systemu";
 "User color" = "Kolor użytkownika";
 "Idle color" = "Nieaktywny kolor";
 "Cluster grouping" = "Grupowanie klastrów";
 "Efficiency cores color" = "Kolor rdzeni energooszczędnych";
 "Performance cores color" = "Kolor rdzeni wydajnościowych";
+"Super cores color" = "Kolor super rdzeni";
 "Total load" = "Całkowite obciążenie";
 "System load" = "Obciążenie systemu";
 "User load" = "Obciążenie użytkownika";
 "Efficiency cores load" = "Obciążenie rdzeni energooszczędnych";
 "Performance cores load" = "Obciążenie rdzeni wydajnościowych";
+"Super cores load" = "Obciążenie super rdzeni";
 "All cores" = "Wszystkie rdzenie";
 "Load per core" = "Obciążenie na rdzeń";
 "Efficiency core" = "Rdzeń energooszczędny";
@@ -300,10 +315,16 @@
 "Model" = "Model";
 "Status" = "Stan";
 "Utilization" = "Wykorzystanie";
-"Render utilization" = "Wykorzystanie rendera";
+"Renderer utilization" = "Wykorzystanie renderera";
+"Renderer utilization history" = "Historia wykorzystania renderera";
 "Tiler utilization" = "Wykorzystanie tilera";
+"Tiler utilization history" = "Historia wykorzystania tilera";
 "GPU usage threshold" = "Próg wykorzystania GPU";
 "GPU usage is" = "Użycie GPU %0";
+"ANE utilization" = "Wykorzystanie ANE";
+"ANE utilization history" = "Historia wykorzystania ANE";
+"FPS history" = "Historia FPS";
+"GPU utilization history" = "Historia wykorzystania GPU";
 
 // RAM
 "Memory usage" = "Użycie pamięci";
@@ -325,12 +346,14 @@
 "Free memory (less than)" = "Wolna pamięć (mniej niż)";
 "Swap size" = "Rozmiar swap";
 "Free RAM is" = "Wolna pamięć RAM %0";
+"Pressure" = "Ciśnienie";
+"Pressure level" = "Poziom ciśnienia";
 
 // Disk
 "Show removable disks" = "Pokaż dyski wymienne";
 "Used disk memory" = "Wykorzystano %0 z %1";
 "Free disk memory" = "Dostępne %0 z %1";
-"Disk to show" = "Aktywny dysk";
+"Disk to show" = "Dysk do wyświetlenia";
 "Open disk" = "Otwórz dysk";
 "Switch view" = "Przełącz widok";
 "Disk utilization threshold" = "Próg wykorzystania dysku";
@@ -346,8 +369,6 @@
 "Encrypted" = "Zaszyfrowany";
 "Writable" = "Zapisywalny";
 "Drives" = "Dyski";
-"SMART data" = "Dane SMART";
-"ATA SMART data" = "Dane ATA SMART";
 "Power cycles" = "Liczba cykli";
 "Power on hours" = "Godziny pracy";
 "Critical warning" = "Ostrzeżenie krytyczne";
@@ -360,6 +381,12 @@
 "Reliability degraded" = "Obniżona niezawodność";
 "Read-only mode" = "Tryb tylko do odczytu";
 "Backup failed" = "Kopia zapasowa nie powiodła się";
+"All disks" = "Wszystkie dyski";
+"Disk details" = "Szczegóły dysku";
+"Main color" = "Główny kolor";
+"Read / Write history" = "Historia odczytu / zapisu";
+"mounted" = "zamontowany";
+"removable" = "wyjmowalny";
 
 // Sensors
 "Celsius" = "Celsjusz";
@@ -378,7 +405,7 @@
 "To control the fans, enable Stats in System Settings ▸ Login Items." = "Aby sterować wentylatorami, włącz Stats w Ustawieniach systemowych ▸ Elementy logowania.";
 "Open Login Items" = "Otwórz elementy logowania";
 "Could not enable the fan helper" = "Nie można włączyć narzędzia do wentylatora";
-"Open System Settings ▸ Login Items, make sure Stats is allowed in the background, then try again." = "Otwórz Ustawienia systemowe ▸ Elementy logowania, upewnij się, że Stats są dozwolone w tle, a następnie spróbuj ponownie.";
+"Open System Settings ▸ Login Items, make sure Stats is allowed in the background, then try again." = "Otwórz Ustawienia systemowe ▸ Elementy logowania, upewnij się, że aplikacja Stats może działać w tle, a następnie spróbuj ponownie";
 "Fan value" = "Wartość wentylatora";
 "Turn off fan" = "Wyłączyć wentylator";
 "You are going to turn off the fan. This is not recommended action that can damage your mac, are you sure you want to do that?" = "Zamierzasz wyłączyć wentylator. To nie jest zalecana czynność, która może spowodować uszkodzenie komputera Mac. Czy na pewno chcesz to zrobić?";
@@ -389,6 +416,8 @@
 "Sensor to show" = "Aktywny czujnik";
 
 // Network
+"Allow access to Wi-Fi details" = "Zezwól na dostęp do szczegółów Wi-Fi";
+"Open Location Settings" = "Otwórz ustawienia lokalizacji";
 "Uploading" = "Wysyłanie";
 "Downloading" = "Pobieranie";
 "Public IP" = "Publiczny IP";
@@ -397,14 +426,14 @@
 "Physical address" = "Adres fizyczny";
 "Refresh" = "Odśwież";
 "Network interface" = "Interfejs sieciowy";
-"Total download" = "Całkowicie pobrano";
-"Total upload" = "Całkowicie wysłano";
+"Total download" = "Pobrano łącznie";
+"Total upload" = "Wysłano łącznie";
 "Reader type" = "Sposób odczytu";
 "Interface based" = "Interfejs";
 "Processes based" = "Procesy";
 "Reset data usage" = "Resetuj użycie danych";
 "VPN mode" = "Tryb VPN";
-"Standard" = "Standard";
+"Standard" = "Standardowy";
 "Security" = "Szyfrowanie";
 "Channel" = "Kanał";
 "Autodetection" = "Autodetekcja";
@@ -428,14 +457,20 @@
 "Internet connection lost" = "Utracono połączenie z internetem";
 "Internet connection established" = "Połączenie z internetem zostało przywrócone";
 "Show country code instead of emoji" = "Wyświetl kod kraju zamiast emoji";
+"DNS Server" = "Serwer DNS";
+"Noise" = "Szum";
+"Signal" = "Sygnał";
+"Speed" = "Prędkość";
+"Network interface changed" = "Zmieniono interfejs sieciowy";
+"WiFi network changed" = "Zmieniono sieć Wi-Fi";
+"This will be visible in the text widget" = "Będzie to widoczne w widżecie tekstowym";
 
 // Battery
 "Source" = "Źródło";
-"AC Power" = "Zasilacz";
+"AC Power" = "Sieć";
 "Battery Power" = "Bateria";
 "Time" = "Czas";
 "Health" = "Zdrowie";
-"Amperage" = "Natężenie";
 "Voltage" = "Napięcie";
 "Cycles" = "Liczba cykli";
 "Temperature" = "Temperatura";
@@ -465,9 +500,11 @@
 "On battery" = "Na baterii";
 "Plugged in" = "Podłączony";
 "Charging" = "Ładowanie";
+"Level" = "Poziom"; // qwen3.8:27b
 
 // Bluetooth
 "No Bluetooth devices are available" = "Brak dostępnych urządzeń Bluetooth";
+"Bluetooth threshold" = "Próg Bluetooth"; // qwen3.8:27b
 
 // Clock
 "Time zone" = "Strefa czasowa";
@@ -514,3 +551,24 @@
 "Pink" = "Różowy";
 "Teal" = "Morski";
 "Indigo" = "Indygo";
+
+// System Stats
+"Authorization" = "Autoryzacja"; // qwen3.8:27b
+"Identificator" = "Identyfikator"; // qwen3.8:27b
+"Plan" = "Plan";
+"Monitoring" = "Monitorowanie"; // qwen3.8:27b
+"Control" = "Sterowanie"; // qwen3.8:27b
+"Update" = "Aktualizuj"; // qwen3.8:27b
+"Sign in" = "Zaloguj się"; // qwen3.8:27b
+"Sign out" = "Wyloguj się"; // qwen3.8:27b
+"Deregister" = "Wyrejestruj";
+"Hosts" = "Hosty"; // qwen3.8:27b
+"Machines" = "Maszyny"; // qwen3.8:27b
+"No hosts yet" = "Brak hostów";
+"No machines yet" = "Brak maszyn";
+"Get notified when a device goes offline or hits a threshold" = "Otrzymuj powiadomienia, gdy urządzenie przejdzie w tryb offline lub przekroczy próg";
+"It is not recommended to enable remote control unless you know what you are doing." = "Nie zaleca się włączania zdalnego sterowania, chyba że wiesz, co robisz."; // qwen3.8:27b
+"Live CPU, RAM, disk and network metrics" = "Metryki CPU, RAM, dysku i sieci na żywo";
+"Login to System Stats to see your devices" = "Zaloguj się do System Stats, aby zobaczyć swoje urządzenia"; // qwen3.8:27b
+"Monitor HTTP, ICMP and custom endpoints" = "Monitoruj HTTP, ICMP oraz niestandardowe punkty końcowe"; // qwen3.8:27b
+"Monitor and control your Macs from anywhere. Sign in to your System Stats account to see all your devices and hosts in one place." = "Monitoruj swoje Maki i steruj nimi z dowolnego miejsca. Zaloguj się na swoje konto System Stats, aby zobaczyć wszystkie swoje urządzenia i hosty w jednym miejscu.";

@@ -18,7 +18,10 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private var popup: PopupWindow? = nil
     
     private var status: Bool {
-        Store.shared.bool(key: "CombinedModules", defaultValue: false)
+        Store.shared.bool(key: "CombinedModules", defaultValue: false) && !Store.shared.bool(key: "pause", defaultValue: false)
+    }
+    private var iconOnly: Bool {
+        Store.shared.bool(key: "CombinedModules_icon", defaultValue: false)
     }
     private var spacing: CGFloat {
         CGFloat(Int(Store.shared.string(key: "CombinedModules_spacing", defaultValue: "")) ?? 0)
@@ -55,16 +58,20 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
             self.enable()
         }
         
-        NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(listenForStateChange), name: .toggleOneView, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(listenForStateChange), name: .pause, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForModuleRearrrange), name: .moduleRearrange, object: nil)
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .pause, object: nil)
         NotificationCenter.default.removeObserver(self, name: .moduleRearrange, object: nil)
     }
     
     public func enable() {
+        guard self.menuBarItem == nil else { return }
+        
         self.menuBarItem = NSStatusBar.system.statusItem(withLength: 0)
         DispatchQueue.main.async(execute: {
             self.menuBarItem?.autosaveName = "CombinedModules"
@@ -83,6 +90,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     public func disable() {
+        self.popup?.setIsVisible(false)
         if let item = self.menuBarItem {
             NSStatusBar.system.removeStatusItem(item)
         }
@@ -90,7 +98,15 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     private func recalculate() {
+        guard self.status, self.menuBarItem != nil else { return }
         self.view.subviews.forEach({ $0.removeFromSuperview() })
+        
+        if self.iconOnly {
+            self.view.addSubview(AppIcon())
+            self.view.setFrameSize(NSSize(width: AppIcon.size.width, height: self.view.frame.height))
+            self.menuBarItem?.length = AppIcon.size.width
+            return
+        }
         
         let visibleModules = self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
         var w: CGFloat = 0
@@ -98,10 +114,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
             if i != 0 {
                 w += self.spacing
                 if self.separator {
-                    let separator = NSView(frame: NSRect(x: w, y: 3, width: 1, height: Constants.Widget.height-6))
-                    separator.wantsLayer = true
-                    separator.layer?.backgroundColor = (separator.isDarkMode ? NSColor.white : NSColor.black).cgColor
-                    self.view.addSubview(separator)
+                    self.view.addSubview(SeparatorLineView(frame: NSRect(x: w, y: 3, width: 1, height: Constants.Widget.height-6)))
                     w += 3 + self.spacing
                 }
             }
@@ -117,7 +130,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private func visibilityCallback(_ state: Bool) {}
     
     @objc private func handleClick() {
-        if self.combinedModulesPopup {
+        if self.iconOnly || self.combinedModulesPopup {
             self.togglePopup()
         } else {
             self.openModulePopup()
@@ -145,12 +158,8 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     
     private func togglePopup() {
         guard let popup = self.popup, let item = self.menuBarItem, let window = item.button?.window else { return }
-        let openedWindows = NSApplication.shared.windows.filter{ $0 is NSPanel }
-        openedWindows.forEach{ $0.setIsVisible(false) }
         
         if popup.occlusionState.rawValue == 8192 {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            
             popup.contentView?.invalidateIntrinsicContentSize()
             
             let windowCenter = popup.contentView!.intrinsicContentSize.width / 2
@@ -168,13 +177,14 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
             }
             
             popup.setFrameOrigin(NSPoint(x: x, y: y))
-            popup.setIsVisible(true)
+            popup.orderFrontRegardless()
+            popup.makeKey()
         } else {
             popup.setIsVisible(false)
         }
     }
     
-    @objc private func listenForOneView(_ notification: Notification) {
+    @objc private func listenForStateChange(_ notification: Notification) {
         guard notification.userInfo?["module"] == nil else { return }
         
         if self.status {
@@ -186,6 +196,28 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     
     @objc private func listenForModuleRearrrange() {
         self.recalculate()
+    }
+}
+
+private class SeparatorLineView: NSView {
+    override var wantsUpdateLayer: Bool { true }
+    
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        self.wantsLayer = true
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func updateLayer() {
+        self.layer?.backgroundColor = (self.isDarkMode ? NSColor.white : NSColor.black).cgColor
+    }
+    
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        self.needsDisplay = true
     }
 }
 
@@ -233,6 +265,7 @@ private class Popup: NSStackView, Popup_p {
             if let p = m.portal {
                 modulesHeight += p.height
                 self.addArrangedSubview(p)
+                p.widthAnchor.constraint(equalTo: self.widthAnchor).isActive = true
             }
         }
         

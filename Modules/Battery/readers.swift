@@ -19,8 +19,16 @@ internal class UsageReader: Reader<Battery_Usage> {
     private var loop: CFRunLoop?
     
     private var usage: Battery_Usage = Battery_Usage()
+    private let readLock = NSLock()
+    
+    public override func setup() {
+        self.defaultInterval = 5
+    }
     
     deinit {
+        if let source = self.source {
+            CFRunLoopSourceInvalidate(source)
+        }
         if self.service != 0 {
             IOObjectRelease(self.service)
             self.service = 0
@@ -28,10 +36,12 @@ internal class UsageReader: Reader<Battery_Usage> {
     }
     
     public override func start() {
-        self.active = true
+        super.start()
+        guard self.source == nil else { return }
+        
         let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         
-        self.source = IOPSNotificationCreateRunLoopSource({ (context) in
+        guard let source = IOPSNotificationCreateRunLoopSource({ (context) in
             guard let ctx = context else {
                 return
             }
@@ -40,24 +50,31 @@ internal class UsageReader: Reader<Battery_Usage> {
             if watcher.active {
                 watcher.read()
             }
-        }, context).takeRetainedValue()
+        }, context)?.takeRetainedValue() else {
+            return
+        }
         
+        self.source = source
         self.loop = RunLoop.current.getCFRunLoop()
         CFRunLoopAddSource(self.loop, source, .defaultMode)
-        
-        self.read()
     }
     
     public override func stop() {
+        super.stop()
         guard let runLoop = loop, let source = source else {
             return
         }
         
-        self.active = false
         CFRunLoopRemoveSource(runLoop, source, .defaultMode)
+        CFRunLoopSourceInvalidate(source)
+        self.source = nil
+        self.loop = nil
     }
     
     public override func read() {
+        self.readLock.lock()
+        defer { self.readLock.unlock() }
+        
         let psInfo = IOPSCopyPowerSourcesInfo().takeRetainedValue()
         let psList = IOPSCopyPowerSourcesList(psInfo).takeRetainedValue() as [CFTypeRef]
         
@@ -65,81 +82,108 @@ internal class UsageReader: Reader<Battery_Usage> {
             return
         }
         
-        for ps in psList {
-            if let list = IOPSGetPowerSourceDescription(psInfo, ps).takeUnretainedValue() as? [String: Any] {
-                self.usage.powerSource = list[kIOPSPowerSourceStateKey] as? String ?? "AC Power"
-                self.usage.isBatteryPowered = self.usage.powerSource == "Battery Power"
-                self.usage.isCharged = list[kIOPSIsChargedKey] as? Bool ?? false
-                self.usage.isCharging = self.getBoolValue("IsCharging" as CFString) ?? false
-                self.usage.optimizedChargingEngaged = list["Optimized Battery Charging Engaged"] as? Int == 1
-                self.usage.level = Double(list[kIOPSCurrentCapacityKey] as? Int ?? 0) / 100
-                
-                self.usage.timeToEmpty = list[kIOPSTimeToEmptyKey] as? Int ?? 0
-                self.usage.timeToCharge = list[kIOPSTimeToFullChargeKey] as? Int ?? 0
-                
-                if self.usage.powerSource == "AC Power" {
-                    self.usage.timeOnACPower = Date()
-                }
-                
-                self.usage.cycles = self.getIntValue("CycleCount" as CFString) ?? 0
-                
-                let batteryData = self.getDictValue("BatteryData" as CFString)
-                
-                self.usage.currentCapacity = self.getIntValue("AppleRawCurrentCapacity" as CFString) ?? batteryData?["RemainingCapacity"] as? Int ?? 0
-                self.usage.designedCapacity = self.getIntValue("DesignCapacity" as CFString) ?? batteryData?["DesignCapacity"] as? Int ?? 1
-                if self.usage.designedCapacity == 0 {
-                    self.usage.designedCapacity = 1
-                }
-                self.usage.maxCapacity = self.getIntValue((isARM ? "AppleRawMaxCapacity" : "MaxCapacity") as CFString)
-                    ?? self.getIntValue("NominalChargeCapacity" as CFString)
-                    ?? batteryData?["NominalChargeCapacity"] as? Int
-                    ?? batteryData?["FullChargeCapacity"] as? Int
-                    ?? 1
-                if self.usage.maxCapacity == 0 {
-                    self.usage.maxCapacity = 1
-                }
-                if !isARM {
-                    self.usage.state = list[kIOPSBatteryHealthKey] as? String
-                }
-                self.usage.health = Int((Double(100 * self.usage.maxCapacity) / Double(self.usage.designedCapacity)).rounded(.toNearestOrEven))
-                
-                self.usage.current = self.getIntValue("Amperage" as CFString) ?? 0
-                self.usage.voltage = self.getVoltage() ?? 0
-                self.usage.temperature = self.getTemperature() ?? 0
-                
-                var ACwatts: Int = 0
-                if let ACDetails = IOPSCopyExternalPowerAdapterDetails() {
-                    if let ACList = ACDetails.takeRetainedValue() as? [String: Any],
-                       let watts = ACList[kIOPSPowerAdapterWattsKey] as? Int {
-                        ACwatts = watts
-                    }
-                }
-                self.usage.ACwatts = ACwatts
-                
-                self.usage.batteryPower = SMC.shared.getValue("PPBR") ?? (self.usage.voltage * (Double(self.usage.current) / 1000))
-                self.usage.adapterPower = SMC.shared.getValue("PDTR") ?? 0
-                self.usage.adapterVoltage = 0
-                if !self.usage.isBatteryPowered, let adapterDetails = self.getAdapterDetails() {
-                    self.usage.adapterVoltage = Double(adapterDetails["AdapterVoltage"] as? Int ?? 0) / 1000
-                }
-                
-                self.usage.chargingCurrent = 0
-                self.usage.chargingVoltage = 0
-                if let chargerData = self.getChargerData() {
-                    if !self.usage.isBatteryPowered {
-                        self.usage.chargingCurrent = chargerData["ChargingCurrent"] as? Int ?? 0
-                        self.usage.chargingVoltage = chargerData["ChargingVoltage"] as? Int ?? 0
-                    }
-                    
-                    if !self.usage.optimizedChargingEngaged && !self.usage.isBatteryPowered && !self.usage.isCharging && self.usage.level < 1,
-                       let notChargingReason = chargerData["NotChargingReason"] as? Int, notChargingReason != 0 {
-                        self.usage.optimizedChargingEngaged = true
-                    }
-                }
-                
-                self.callback(self.usage)
+        let descriptions = psList.compactMap { IOPSGetPowerSourceDescription(psInfo, $0).takeUnretainedValue() as? [String: Any] }
+        guard let list = descriptions.first(where: { $0[kIOPSTypeKey] as? String == kIOPSInternalBatteryType }) ?? descriptions.first else {
+            return
+        }
+        
+        self.usage.ups = nil
+        if let ups = descriptions.first(where: { $0[kIOPSTypeKey] as? String == kIOPSUPSType }) {
+            let state = ups[kIOPSPowerSourceStateKey] as? String ?? "AC Power"
+            self.usage.ups = UPS_Usage(
+                name: ups[kIOPSNameKey] as? String ?? "",
+                powerSource: state,
+                isBatteryPowered: state == "UPS Power",
+                isCharged: ups[kIOPSIsChargedKey] as? Bool ?? false,
+                isCharging: ups[kIOPSIsChargingKey] as? Bool ?? false,
+                level: Double(ups[kIOPSCurrentCapacityKey] as? Int ?? 0) / 100,
+            )
+        }
+        
+        let powerSource = list[kIOPSPowerSourceStateKey] as? String
+        let isCharging = self.getBoolValue("IsCharging" as CFString)
+        let level = list[kIOPSCurrentCapacityKey] as? Int
+        
+        self.usage.powerSource = powerSource ?? "AC Power"
+        self.usage.isBatteryPowered = self.usage.powerSource == "Battery Power"
+        self.usage.isCharged = list[kIOPSIsChargedKey] as? Bool ?? false
+        self.usage.isCharging = isCharging ?? false
+        self.usage.optimizedChargingEngaged = list["Optimized Battery Charging Engaged"] as? Int == 1
+        self.usage.level = Double(level ?? 0) / 100
+        
+        self.usage.timeToEmpty = list[kIOPSTimeToEmptyKey] as? Int ?? 0
+        self.usage.timeToCharge = list[kIOPSTimeToFullChargeKey] as? Int ?? 0
+        
+        if self.usage.powerSource == "AC Power" {
+            self.usage.timeOnACPower = Date()
+        }
+        
+        let cycles = self.getIntValue("CycleCount" as CFString)
+        self.usage.cycles = cycles ?? 0
+        
+        let batteryData = self.getDictValue("BatteryData" as CFString)
+        
+        self.usage.currentCapacity = self.getIntValue("AppleRawCurrentCapacity" as CFString) ?? batteryData?["RemainingCapacity"] as? Int ?? 0
+        self.usage.designedCapacity = self.getIntValue("DesignCapacity" as CFString) ?? batteryData?["DesignCapacity"] as? Int ?? 1
+        if self.usage.designedCapacity == 0 {
+            self.usage.designedCapacity = 1
+        }
+        self.usage.maxCapacity = self.getIntValue((isARM ? "AppleRawMaxCapacity" : "MaxCapacity") as CFString)
+            ?? self.getIntValue("NominalChargeCapacity" as CFString)
+            ?? batteryData?["NominalChargeCapacity"] as? Int
+            ?? batteryData?["FullChargeCapacity"] as? Int
+            ?? 1
+        if self.usage.maxCapacity == 0 {
+            self.usage.maxCapacity = 1
+        }
+        if !isARM {
+            self.usage.state = list[kIOPSBatteryHealthKey] as? String
+        }
+        self.usage.health = Int((Double(100 * self.usage.maxCapacity) / Double(self.usage.designedCapacity)).rounded(.toNearestOrEven))
+        if self.usage.health > 100 {
+            self.usage.health = 100
+        }
+        self.usage.available = list[kIOPSTypeKey] as? String == kIOPSInternalBatteryType &&
+            (0...100).contains(level ?? -1) &&
+            (powerSource == "AC Power" || powerSource == "Battery Power") &&
+            isCharging != nil && (cycles ?? -1) >= 0
+        
+        self.usage.current = self.getIntValue("Amperage" as CFString) ?? 0
+        self.usage.voltage = self.getVoltage() ?? 0
+        self.usage.temperature = self.getTemperature()
+        
+        var ACwatts: Int = 0
+        if let ACDetails = IOPSCopyExternalPowerAdapterDetails() {
+            if let ACList = ACDetails.takeRetainedValue() as? [String: Any],
+               let watts = ACList[kIOPSPowerAdapterWattsKey] as? Int {
+                ACwatts = watts
             }
         }
+        self.usage.ACwatts = ACwatts
+        
+        let calculatedPower = self.usage.voltage * (Double(self.usage.current) / 1000)
+        self.usage.batteryPower = isARM ? (SMC.shared.getValue("PPBR") ?? calculatedPower) : calculatedPower
+        self.usage.adapterPower = SMC.shared.getValue("PDTR") ?? 0
+        self.usage.adapterVoltage = 0
+        if !self.usage.isBatteryPowered, let adapterDetails = self.getAdapterDetails() {
+            self.usage.adapterVoltage = Double(adapterDetails["AdapterVoltage"] as? Int ?? 0) / 1000
+        }
+        
+        self.usage.chargingCurrent = 0
+        self.usage.chargingVoltage = 0
+        if let chargerData = self.getChargerData() {
+            if !self.usage.isBatteryPowered {
+                self.usage.chargingCurrent = chargerData["ChargingCurrent"] as? Int ?? 0
+                self.usage.chargingVoltage = chargerData["ChargingVoltage"] as? Int ?? 0
+            }
+            
+            if !self.usage.optimizedChargingEngaged && !self.usage.isBatteryPowered && !self.usage.isCharging && self.usage.level < 1,
+               let notChargingReason = chargerData["NotChargingReason"] as? Int, notChargingReason != 0 {
+                self.usage.optimizedChargingEngaged = true
+            }
+        }
+        
+        self.callback(self.usage)
     }
     
     private func getBoolValue(_ forIdentifier: CFString) -> Bool? {
@@ -178,14 +222,27 @@ internal class UsageReader: Reader<Battery_Usage> {
     }
     
     private func getTemperature() -> Double? {
-        let sensors = ["TB1T", "TB2T"].compactMap { SMC.shared.getValue($0) }.filter { $0 > 0 }
+        if let value = IORegistryEntryCreateCFProperty(self.service, "Temperature" as CFString, kCFAllocatorDefault, 0),
+           let temperature = value.takeRetainedValue() as? Double, temperature.isFinite && temperature > 0 {
+            return temperature / 100.0
+        }
+        
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceNameMatching("AppleSmartBatteryPack"))
+        if service != 0 {
+            defer { IOObjectRelease(service) }
+            
+            if let value = IORegistryEntryCreateCFProperty(service, "BatteryData" as CFString, kCFAllocatorDefault, 0),
+               let batteryData = value.takeRetainedValue() as? [String: Any],
+               let temperature = batteryData["Temperature"] as? Double, temperature.isFinite && temperature > 0 {
+                return temperature / 100.0
+            }
+        }
+        
+        let sensors = ["TB1T", "TB2T"].compactMap { SMC.shared.getValue($0) }.filter { $0.isFinite && $0 > 0 }
         if !sensors.isEmpty {
             return sensors.reduce(0, +) / Double(sensors.count)
         }
-        if let value = IORegistryEntryCreateCFProperty(self.service, "Temperature" as CFString, kCFAllocatorDefault, 0),
-           let temperature = value.takeRetainedValue() as? Double {
-            return temperature / 100.0
-        }
+        
         return nil
     }
     
@@ -195,7 +252,7 @@ internal class UsageReader: Reader<Battery_Usage> {
         }
         return nil
     }
-
+    
     private func getAdapterDetails() -> [String: Any]? {
         if let adapterDetails = IORegistryEntryCreateCFProperty(service, "AdapterDetails" as CFString, kCFAllocatorDefault, 0) {
             return adapterDetails.takeRetainedValue() as? [String: Any]

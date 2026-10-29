@@ -50,6 +50,14 @@ internal class Preview: PreviewWrapper {
     
     private var initialized: Bool = false
     private var connectionInitialized: Bool = false
+    private var initializedProcesses: Bool = false
+    
+    private var processes: ProcessesView? = nil
+    private var processesSection: PreferencesSection? = nil
+    
+    private var numberOfProcesses: Int {
+        Store.shared.int(key: "\(self.module.stringValue)_processes", defaultValue: 8)
+    }
     
     private var downloadColorState: SColor = .secondBlue
     private var downloadColor: NSColor {
@@ -93,6 +101,8 @@ internal class Preview: PreviewWrapper {
         
         self.addArrangedSubview(splitView)
         self.addArrangedSubview(PreferencesSection(title: localizedString("Address"), [self.addressesView()]))
+        
+        self.addArrangedSubview(self.topProcesses())
     }
     
     required init?(coder: NSCoder) {
@@ -176,7 +186,7 @@ internal class Preview: PreviewWrapper {
         self.statusField = previewBadgeRow(view, title: "\(localizedString("Status")):")
         self.connectivityField = previewBadgeRow(view, title: "\(localizedString("Internet connection")):")
         self.latencyField = previewRow(view, title: "\(localizedString("Latency")):", value: "0 ms")
-        self.jitterField = previewRow(view, title: "\(localizedString("Jitter")):", value: "0 ms")
+        self.jitterField = previewRow(view, title: "\("Jitter"):", value: "0 ms")
         
         return view
     }
@@ -194,7 +204,7 @@ internal class Preview: PreviewWrapper {
         self.macAddressField?.isSelectable = true
         self.ssidField = previewRow(view, title: "\(localizedString("Network")):", value: "")
         self.ssidField?.superview?.isHidden = true
-        self.bssidField = previewRow(view, title: "\(localizedString("BSSID")):", value: "")
+        self.bssidField = previewRow(view, title: "\("BSSID"):", value: "")
         self.bssidField?.isSelectable = true
         self.bssidField?.superview?.isHidden = true
         self.standardField = previewRow(view, title: "\(localizedString("Standard")):", value: "")
@@ -228,6 +238,48 @@ internal class Preview: PreviewWrapper {
         self.dnsField?.isSelectable = true
         
         return view
+    }
+    
+    private func topProcesses() -> NSView {
+        let view = ProcessesView(
+            values: [(localizedString("Downloading"), self.downloadColor), (localizedString("Uploading"), self.uploadColor)],
+            n: self.numberOfProcesses,
+            showPID: true
+        )
+        self.processes = view
+        
+        let section = PreferencesSection(title: localizedString("Top processes"), [view])
+        section.isHidden = self.numberOfProcesses == 0
+        self.processesSection = section
+        
+        return section
+    }
+    
+    public func numberOfProcessesUpdated() {
+        self.processes?.setLock(false)
+        self.processes?.setNumberOfProcesses(self.numberOfProcesses)
+        self.processesSection?.isHidden = self.numberOfProcesses == 0
+        self.initializedProcesses = false
+    }
+    
+    public func processCallback(_ list: [Network_Process]?) {
+        guard let list else { return }
+        
+        DispatchQueue.main.async(execute: {
+            guard (self.window?.isVisible ?? false) || !self.initializedProcesses, let view = self.processes else { return }
+            
+            for i in 0..<view.count {
+                if list.indices.contains(i) {
+                    let process = list[i]
+                    let download = Units(bytes: Int64(process.download)).getReadableSpeed(base: self.base, unit: self.speedUnit)
+                    let upload = Units(bytes: Int64(process.upload)).getReadableSpeed(base: self.base, unit: self.speedUnit)
+                    view.set(i, process, [download, upload])
+                } else {
+                    view.set(i, nil, [])
+                }
+            }
+            self.initializedProcesses = true
+        })
     }
     
     public func usageCallback(_ value: Network_Usage) {

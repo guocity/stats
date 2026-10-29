@@ -80,7 +80,6 @@ extension AppDelegate {
         }
         
         if !Store.shared.exist(key: key) {
-            Store.shared.reset()
             debug("Previous version not detected. Current version (\(currentVersion) set")
         } else {
             let prevVersion = Store.shared.string(key: key, defaultValue: "")
@@ -341,6 +340,8 @@ extension AppDelegate {
     
     internal func icon() {
         if self.pauseState {
+            guard self.menuBarItem == nil else { return }
+            
             self.menuBarItem = NSStatusBar.system.statusItem(withLength: AppIcon.size.width)
             DispatchQueue.main.async(execute: {
                 self.menuBarItem?.autosaveName = "Stats"

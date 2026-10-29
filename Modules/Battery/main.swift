@@ -13,7 +13,7 @@ import Cocoa
 import Kit
 import IOKit.ps
 
-struct Battery_Usage: Codable {
+struct Battery_Usage: Codable, RemoteType {
     var powerSource: String = ""
     var state: String? = nil
     var isCharged: Bool = false
@@ -30,9 +30,9 @@ struct Battery_Usage: Codable {
     
     var current: Int = 0
     var voltage: Double = 0
-    var temperature: Double = 0
+    var temperature: Double? = nil
     var batteryPower: Double = 0
-
+    
     var ACwatts: Int = 0
     var chargingCurrent: Int = 0
     var chargingVoltage: Int = 0
@@ -42,6 +42,25 @@ struct Battery_Usage: Codable {
     var timeToEmpty: Int = 0
     var timeToCharge: Int = 0
     var timeOnACPower: Date? = nil
+    
+    var ups: UPS_Usage? = nil
+    var available: Bool? = nil
+    
+    func remote() -> Data? {
+        guard self.available == true else { return nil }
+        let health = self.designedCapacity > 1 && self.maxCapacity > 1 ? String(self.health) : ""
+        let string = "\(self.level),\(self.powerSource),\(self.isCharging),\(health),\(self.cycles)$"
+        return string.data(using: .utf8)
+    }
+}
+
+struct UPS_Usage: Codable {
+    var name: String = ""
+    var powerSource: String = ""
+    var isBatteryPowered: Bool = false
+    var isCharged: Bool = false
+    var isCharging: Bool = false
+    var level: Double = 0
 }
 
 public class Battery: Module {
@@ -52,6 +71,13 @@ public class Battery: Module {
     
     private var usageReader: UsageReader? = nil
     private var processReader: ProcessReader? = nil
+    
+    private var textValue: String {
+        Store.shared.string(key: "\(self.name)_textWidgetValue", defaultValue: "$battery.power")
+    }
+    private var timeFormat: String {
+        Store.shared.string(key: "\(self.name)_timeFormat", defaultValue: "short")
+    }
     
     public init() {
         self.settingsView = Settings(.battery)
@@ -131,6 +157,118 @@ public class Battery: Module {
                     percentage: value.level,
                     time: value.isBatteryPowered ? value.timeToEmpty : value.timeToCharge
                 )
+            case let widget as TextWidget:
+                var text = self.textValue
+                let pairs = TextWidget.parseText(text)
+                pairs.forEach { pair in
+                    var replacement: String? = nil
+                    
+                    switch pair.key {
+                    case "$battery":
+                        switch pair.value {
+                        case "level": replacement = "\(Int(abs(value.level) * 100))%"
+                        case "power": replacement = "\(abs(value.batteryPower).roundTo(decimalPlaces: 2)) W"
+                        case "current": replacement = "\(value.current) mA"
+                        case "voltage": replacement = "\(value.voltage.roundTo(decimalPlaces: 2)) V"
+                        case "temperature": replacement = value.temperature.map { temperature($0) } ?? localizedString("Unavailable")
+                        case "health": replacement = "\(value.health)%"
+                        case "cycles": replacement = "\(value.cycles)"
+                        case "source": replacement = localizedString(value.powerSource)
+                        case "state": replacement = value.state.map { localizedString($0) } ?? localizedString("Unavailable")
+                        case "status":
+                            if value.isBatteryPowered {
+                                replacement = localizedString("On battery")
+                            } else if value.isCharged {
+                                replacement = localizedString("Fully charged")
+                            } else if value.optimizedChargingEngaged {
+                                replacement = localizedString("On hold")
+                            } else if value.isCharging {
+                                replacement = localizedString("Charging")
+                            } else {
+                                replacement = localizedString("Plugged in")
+                            }
+                        default: return
+                        }
+                    case "$capacity":
+                        switch pair.value {
+                        case "current": replacement = "\(value.currentCapacity) mAh"
+                        case "max": replacement = "\(value.maxCapacity) mAh"
+                        case "designed": replacement = "\(value.designedCapacity) mAh"
+                        default: return
+                        }
+                    case "$adapter":
+                        switch pair.value {
+                        case "power": replacement = "\(value.adapterPower.roundTo(decimalPlaces: 2)) W"
+                        case "voltage": replacement = "\(value.adapterVoltage.roundTo(decimalPlaces: 2)) V"
+                        case "current":
+                            let current = value.adapterVoltage > 0 ? Int((value.adapterPower / value.adapterVoltage) * 1000) : 0
+                            replacement = "\(current) mA"
+                        case "rating": replacement = "\(value.ACwatts) W"
+                        default: return
+                        }
+                    case "$charging":
+                        switch pair.value {
+                        case "current": replacement = "\(value.chargingCurrent) mA"
+                        case "voltage": replacement = "\((Double(value.chargingVoltage)/1000).roundTo(decimalPlaces: 2)) V"
+                        default: return
+                        }
+                    case "$time":
+                        let minutes: Int
+                        switch pair.value {
+                        case "remaining":
+                            if value.isCharged {
+                                replacement = localizedString("Fully charged")
+                            } else if value.optimizedChargingEngaged {
+                                replacement = localizedString("On hold")
+                            }
+                            minutes = value.isBatteryPowered ? value.timeToEmpty : value.timeToCharge
+                        case "empty": minutes = value.timeToEmpty
+                        case "charge": minutes = value.timeToCharge
+                        default: return
+                        }
+                        if replacement == nil {
+                            if minutes == -1 {
+                                replacement = localizedString("Calculating")
+                            } else if minutes > 0 {
+                                replacement = Double(minutes*60).printSecondsToHoursMinutesSeconds(short: self.timeFormat == "short")
+                            } else {
+                                replacement = localizedString("Unknown")
+                            }
+                        }
+                    case "$ups":
+                        switch pair.value {
+                        case "name", "level", "source", "status": break
+                        default: return
+                        }
+                        if let ups = value.ups {
+                            switch pair.value {
+                            case "name": replacement = ups.name
+                            case "level": replacement = "\(Int(abs(ups.level) * 100))%"
+                            case "source": replacement = localizedString(ups.powerSource)
+                            case "status":
+                                if ups.isBatteryPowered {
+                                    replacement = localizedString("On battery")
+                                } else if ups.isCharged {
+                                    replacement = localizedString("Fully charged")
+                                } else if ups.isCharging {
+                                    replacement = localizedString("Charging")
+                                } else {
+                                    replacement = localizedString("Plugged in")
+                                }
+                            default: return
+                            }
+                        } else {
+                            replacement = localizedString("Unavailable")
+                        }
+                    default: return
+                    }
+                    
+                    if let replacement {
+                        let key = pair.value.isEmpty ? pair.key : "\(pair.key).\(pair.value)"
+                        text = text.replacingOccurrences(of: key, with: replacement)
+                    }
+                }
+                widget.setValue(text)
             default: break
             }
         }

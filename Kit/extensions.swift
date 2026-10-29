@@ -36,6 +36,132 @@ internal final class RegexCache {
     }
 }
 
+internal final class FormatterCache {
+    static let shared = FormatterCache()
+    
+    private var byteCount: [ByteCountFormatter.CountStyle: ByteCountFormatter] = [:]
+    private var number: [Int: NumberFormatter] = [:]
+    private var measurement: [Int: MeasurementFormatter] = [:]
+    private let lock = NSLock()
+    
+    func readableMemory(_ bytes: Int64, style: ByteCountFormatter.CountStyle) -> String {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        
+        let formatter: ByteCountFormatter
+        if let cached = self.byteCount[style] {
+            formatter = cached
+        } else {
+            formatter = ByteCountFormatter()
+            formatter.countStyle = style
+            formatter.includesUnit = true
+            formatter.isAdaptive = true
+            self.byteCount[style] = formatter
+        }
+        return formatter.string(fromByteCount: bytes)
+    }
+    
+    func decimal(_ value: Double, maximumFractionDigits: Int) -> String? {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        
+        let formatter: NumberFormatter
+        if let cached = self.number[maximumFractionDigits] {
+            formatter = cached
+        } else {
+            formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.decimalSeparator = "."
+            formatter.usesGroupingSeparator = false
+            formatter.minimumFractionDigits = 0
+            formatter.maximumFractionDigits = maximumFractionDigits
+            
+            self.number[maximumFractionDigits] = formatter
+        }
+        return formatter.string(from: NSNumber(value: value))
+    }
+    
+    func temperature(_ measurement: Measurement<UnitTemperature>, fractionDigits: Int) -> String {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        
+        let formatter: MeasurementFormatter
+        if let cached = self.measurement[fractionDigits] {
+            formatter = cached
+        } else {
+            formatter = MeasurementFormatter()
+            formatter.locale = Locale(identifier: "en_US")
+            formatter.numberFormatter.maximumFractionDigits = fractionDigits
+            if fractionDigits != 0 {
+                formatter.numberFormatter.minimumFractionDigits = fractionDigits
+            }
+            formatter.unitOptions = .providedUnit
+            self.measurement[fractionDigits] = formatter
+        }
+        return formatter.string(from: measurement)
+    }
+}
+
+internal final class WidgetTextCache {
+    struct Entry {
+        let string: NSAttributedString
+        let width: CGFloat
+    }
+    
+    private var cache: [String: Entry] = [:]
+    private let lock = NSLock()
+    private let limit: Int
+    
+    init(limit: Int = 128) {
+        self.limit = limit
+    }
+    
+    func entry(_ value: String, key: String, attributes: () -> [NSAttributedString.Key: Any]) -> Entry {
+        let cacheKey = "\(key)|\(value)"
+        
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        
+        if let cached = self.cache[cacheKey] {
+            return cached
+        }
+        if self.cache.count >= self.limit {
+            self.cache.removeAll(keepingCapacity: true)
+        }
+        
+        let string = NSAttributedString(string: value, attributes: attributes())
+        let entry = Entry(string: string, width: string.size().width)
+        self.cache[cacheKey] = entry
+        return entry
+    }
+    
+    func invalidate() {
+        self.lock.lock()
+        self.cache.removeAll(keepingCapacity: true)
+        self.lock.unlock()
+    }
+}
+
+public final class ProcessIconCache {
+    public static let shared = ProcessIconCache()
+    
+    private let cache = NSCache<NSNumber, NSImage>()
+    
+    init() {
+        self.cache.countLimit = 256
+    }
+    
+    public func icon(for pid: Int) -> NSImage {
+        let key = NSNumber(value: pid)
+        if let cached = self.cache.object(forKey: key) {
+            return cached
+        }
+        let icon = NSRunningApplication(processIdentifier: pid_t(pid))?.icon ?? Constants.defaultProcessIcon
+        self.cache.setObject(icon, forKey: key)
+        return icon
+    }
+}
+
 extension String: @retroactive LocalizedError {
     public var errorDescription: String? { return self }
     
@@ -306,7 +432,7 @@ public extension NSView {
         return button
     }
     
-    func textView(_ value: String, alignment: NSTextAlignment = .left) -> NSTextField {
+    func textView(_ value: String, alignment: NSTextAlignment = .natural) -> NSTextField {
         let field: NSTextField = TextView()
         field.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         field.stringValue = value
@@ -561,6 +687,7 @@ open class ScrollableStackView: NSView {
         self.clipView.drawsBackground = false
         
         self.stackView.orientation = orientation
+        self.stackView.setHuggingPriority(.defaultHigh, for: orientation == .vertical ? .horizontal : .vertical)
         self.stackView.translatesAutoresizingMaskIntoConstraints = false
         
         self.scrollView.translatesAutoresizingMaskIntoConstraints = false

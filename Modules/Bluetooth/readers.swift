@@ -10,11 +10,12 @@
 //
 
 import Foundation
+import AppKit
 import Kit
 import CoreBluetooth
 import IOBluetooth
 
-private struct bleDevice {
+internal struct bleDevice {
     var name: String?
     var address: String
     var uuid: UUID?
@@ -34,17 +35,77 @@ private struct ioDevice {
 internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var devices: [BLEDevice] = []
     private var devicesToRemove: [UUID] = []
-    private var manager: CBCentralManager!
+    private var manager: CBCentralManager?
     
     private var characteristicsDict: [UUID: CBCharacteristic] = [:]
     private var bleLevels: [UUID: KeyValue_t] = [:]
+    private let stateQueue = DispatchQueue(label: "eu.exelban.Stats.Bluetooth.DevicesReader")
+    
+    private var profilerCache: (ts: Date, value: ([bleDevice], [String]))? = nil
+    private var pmsetCache: (ts: Date, value: [bleDevice])? = nil
+    private let profilerTTL: TimeInterval = 30
+    private let pmsetTTL: TimeInterval = 10
     
     static let batteryServiceUUID = CBUUID(string: "0x180F")
     static let batteryCharacteristicsUUID = CBUUID(string: "0x2A19")
     
     init(callback: @escaping (T?) -> Void = {_ in }) {
         super.init(.bluetooth, callback: callback)
-        self.manager = CBCentralManager(delegate: self, queue: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(self.willSleep), name: NSWorkspace.willSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(self.didWake), name: NSWorkspace.didWakeNotification, object: nil)
+    }
+    
+    deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+    
+    public override func start() {
+        super.start()
+        self.stateQueue.sync {
+            if self.manager == nil {
+                self.manager = CBCentralManager(delegate: self, queue: nil)
+            }
+        }
+    }
+    
+    public override func stop() {
+        super.stop()
+        self.releaseManager()
+    }
+    
+    public override func terminate() {
+        self.releaseManager()
+    }
+    
+    private func releaseManager() {
+        self.stateQueue.sync {
+            guard let manager = self.manager else { return }
+            if manager.isScanning {
+                manager.stopScan()
+            }
+            manager.delegate = nil
+            self.manager = nil
+            self.characteristicsDict = [:]
+            for i in self.devices.indices {
+                self.devices[i].peripheral = nil
+                self.devices[i].isPeripheralInitialized = false
+            }
+        }
+    }
+    
+    private func startScan(_ central: CBCentralManager) {
+        guard self.active, central.state == .poweredOn, !central.isScanning else { return }
+        central.scanForPeripherals(withServices: [DevicesReader.batteryServiceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+    }
+    
+    @objc private func willSleep() {
+        guard let manager = self.manager, manager.isScanning else { return }
+        manager.stopScan()
+    }
+    
+    @objc private func didWake() {
+        guard let manager = self.manager else { return }
+        self.startScan(manager)
     }
     
     public override func read() {
@@ -54,7 +115,11 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
         let pmsetLevels = self.pmsetAccessoryLevels()
         
         hid.forEach { v in
-            if !list.contains(where: {$0.address == v.address}) {
+            if let idx = list.firstIndex(where: { $0.address == v.address }) {
+                list[idx].batteryLevel = v.batteryLevel
+                list[idx].vendorId = v.vendorId ?? list[idx].vendorId
+                list[idx].productId = v.productId ?? list[idx].productId
+            } else {
                 list.append(v)
             }
         }
@@ -77,118 +142,145 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
             return nil
         }) ?? []
         
-        pairedDevices.forEach { (device: ioDevice) in
-            guard let data = list.first(where: { $0.address == device.address }) else {
-                return
+        let snapshot: [BLEDevice] = self.stateQueue.sync {
+            self.devices = self.devices.filter { (d: BLEDevice) in
+                pairedDevices.contains(where: { $0.address == d.address })
             }
             
-            let rssi = device.rssi == 127 ? nil : Int(device.rssi)
-            if let idx = self.devices.firstIndex(where: { $0.address == data.address }) {
-                self.devices[idx].RSSI = rssi
-                self.devices[idx].batteryLevel = data.batteryLevel
-                self.devices[idx].isPaired = device.isPaired
-                self.devices[idx].isConnected = device.isConnected
-                if self.devices[idx].vendorId == nil { self.devices[idx].vendorId = data.vendorId }
-                if self.devices[idx].productId == nil { self.devices[idx].productId = data.productId }
+            pairedDevices.forEach { (device: ioDevice) in
+                guard let data = list.first(where: { $0.address == device.address }) else {
+                    return
+                }
+                
+                let hasHID = hid.contains(where: { $0.address == device.address })
+                let rssi = device.rssi == 127 ? (hasHID ? 100 : nil) : Int(device.rssi)
+                if let idx = self.devices.firstIndex(where: { $0.address == data.address }) {
+                    self.devices[idx].RSSI = rssi
+                    self.devices[idx].batteryLevel = data.batteryLevel
+                    self.devices[idx].isPaired = device.isPaired
+                    self.devices[idx].isConnected = device.isConnected || hasHID
+                    if self.devices[idx].vendorId == nil { self.devices[idx].vendorId = data.vendorId }
+                    if self.devices[idx].productId == nil { self.devices[idx].productId = data.productId }
+                    
+                    return
+                }
+                
+                self.devices.append(BLEDevice(
+                    address: data.address,
+                    name: data.name ?? device.name,
+                    uuid: data.uuid,
+                    RSSI: rssi,
+                    batteryLevel: data.batteryLevel,
+                    isConnected: device.isConnected || hasHID,
+                    isPaired: device.isPaired,
+                    vendorId: data.vendorId,
+                    productId: data.productId
+                ))
+            }
+            
+            let peripherals = self.manager?.retrievePeripherals(withIdentifiers: self.devices.compactMap({ $0.uuid })) ?? []
+            peripherals.forEach { (p: CBPeripheral) in
+                guard let idx = self.devices.firstIndex(where: { $0.uuid == p.identifier }) else {
+                    return
+                }
+                
+                if self.devices[idx].peripheral == nil {
+                    self.devices[idx].peripheral = p
+                }
+                
+                if p.state == .disconnected {
+                    if let manager = self.manager, manager.state == .poweredOn {
+                        manager.connect(p, options: nil)
+                    }
+                } else if p.state == .disconnecting {
+                    self.devicesToRemove.append(p.identifier)
+                } else if p.state == .connected && !self.devices[idx].isPeripheralInitialized {
+                    p.delegate = self
+                    p.discoverServices([DevicesReader.batteryServiceUUID])
+                    self.devices[idx].isPeripheralInitialized = true
+                }
+            }
+            
+            for (i, d) in self.devices.enumerated() {
+                if let uuid = d.uuid, let val = self.bleLevels[uuid] {
+                    self.devices[i].batteryLevel = [val]
+                }
+            }
+            
+            if !self.devicesToRemove.isEmpty {
+                self.devices = self.devices.filter { (d: BLEDevice) -> Bool in
+                    if let uuid = d.uuid, self.devicesToRemove.contains(uuid) {
+                        return false
+                    }
+                    return true
+                }
+                self.devicesToRemove = []
+            }
+            if !SPB.1.isEmpty {
+                self.devices = self.devices.filter { (d: BLEDevice) in
+                    !SPB.1.contains(d.address) || d.isConnected
+                }
+            }
+            
+            var matchedDevices: Set<String> = []
+            pmsetLevels.forEach { p in
+                if let idx = DevicesReader.accessoryDeviceIndex(p, devices: self.devices, hidDevices: hid, excluding: matchedDevices) {
+                    if !p.batteryLevel.isEmpty {
+                        self.devices[idx].batteryLevel = p.batteryLevel
+                    }
+                    self.devices[idx].isConnected = true
+                    if self.devices[idx].RSSI == nil { self.devices[idx].RSSI = 100 }
+                    matchedDevices.insert(self.devices[idx].address)
+                    return
+                }
+                
+                self.devices.append(BLEDevice(
+                    address: p.address,
+                    name: p.name ?? "",
+                    uuid: p.uuid,
+                    RSSI: 100,
+                    batteryLevel: p.batteryLevel,
+                    isConnected: true,
+                    isPaired: false,
+                    vendorId: p.vendorId,
+                    productId: p.productId
+                ))
+                matchedDevices.insert(p.address)
+            }
+            
+            return self.devices.filter({ $0.RSSI != nil })
+        }
+        self.callback(snapshot)
+    }
+    
+    internal static func accessoryDeviceIndex(_ accessory: bleDevice, devices: [BLEDevice], hidDevices: [bleDevice], excluding: Set<String> = []) -> Int? {
+        func normalized(_ value: String) -> String {
+            value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ":", with: "-").lowercased()
+        }
+        
+        let candidates = devices.indices.filter({ !excluding.contains(devices[$0].address) })
+        let address = normalized(accessory.address)
+        if !address.isEmpty, let idx = candidates.first(where: { normalized(devices[$0].address) == address }) {
+            return idx
+        }
+        
+        let name = normalized(accessory.name ?? "")
+        if !name.isEmpty {
+            let hidAddresses = Set(hidDevices.filter({ normalized($0.name ?? "") == name }).map({ normalized($0.address) }))
+            if hidAddresses.count > 1 { return nil }
+            let hidMatches = candidates.filter({ hidAddresses.contains(normalized(devices[$0].address)) })
+            if hidMatches.count == 1 { return hidMatches[0] }
 
-                return
-            }
-            
-            self.devices.append(BLEDevice(
-                address: data.address,
-                name: data.name ?? device.name,
-                uuid: data.uuid,
-                RSSI: rssi,
-                batteryLevel: data.batteryLevel,
-                isConnected: device.isConnected,
-                isPaired: device.isPaired,
-                vendorId: data.vendorId,
-                productId: data.productId
-            ))
+            let nameMatches = candidates.filter({ normalized(devices[$0].name) == name })
+            if nameMatches.count == 1 { return nameMatches[0] }
+        }
+
+        if let vendorId = accessory.vendorId, let productId = accessory.productId {
+            let matches = candidates.filter({ devices[$0].vendorId == vendorId && devices[$0].productId == productId })
+            if matches.count == 1 { return matches[0] }
         }
         
-        let peripherals = self.manager.retrievePeripherals(withIdentifiers: self.devices.compactMap({ $0.uuid }))
-        peripherals.forEach { (p: CBPeripheral) in
-            guard let idx = self.devices.firstIndex(where: { $0.uuid == p.identifier }) else {
-                return
-            }
-            
-            if self.devices[idx].peripheral == nil {
-                self.devices[idx].peripheral = p
-            }
-            
-            if p.state == .disconnected {
-                if self.manager.isScanning {
-                    self.manager.connect(p, options: nil)
-                }
-            } else if p.state == .disconnecting {
-                self.devicesToRemove.append(p.identifier)
-            } else if p.state == .connected && !self.devices[idx].isPeripheralInitialized {
-                p.delegate = self
-                p.discoverServices([DevicesReader.batteryServiceUUID])
-                self.devices[idx].isPeripheralInitialized = true
-            }
-        }
-        
-        for (i, d) in self.devices.enumerated() {
-            if let uuid = d.uuid, let val = self.bleLevels[uuid] {
-                self.devices[i].batteryLevel = [val]
-            }
-        }
-        
-        if !self.devicesToRemove.isEmpty {
-            self.devices = self.devices.filter { (d: BLEDevice) -> Bool in
-                if let uuid = d.uuid, self.devicesToRemove.contains(uuid) {
-                    return false
-                }
-                return true
-            }
-            self.devicesToRemove = []
-        }
-        if !SPB.1.isEmpty {
-            self.devices = self.devices.filter({ !SPB.1.contains($0.address) })
-        }
-        
-        pmsetLevels.forEach { p in
-            let pmsetName = (p.name ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
-            
-            if !pmsetName.isEmpty,
-               let idx = self.devices.firstIndex(where: {
-                   let deviceName = $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                   return deviceName == pmsetName || deviceName.contains(pmsetName) || pmsetName.contains(deviceName)
-               }) {
-                if !p.batteryLevel.isEmpty {
-                    self.devices[idx].batteryLevel = p.batteryLevel
-                }
-                return
-            }
-            
-            if let pVendor = p.vendorId, let pProduct = p.productId,
-               let idx = self.devices.firstIndex(where: {
-                   $0.vendorId == pVendor && $0.productId == pProduct
-               }) {
-                if !p.batteryLevel.isEmpty {
-                    self.devices[idx].batteryLevel = p.batteryLevel
-                }
-                return
-            }
-            
-            self.devices.append(BLEDevice(
-                address: p.address,
-                name: p.name ?? "",
-                uuid: p.uuid,
-                RSSI: 100,
-                batteryLevel: p.batteryLevel,
-                isConnected: true,
-                isPaired: false,
-                vendorId: p.vendorId,
-                productId: p.productId
-            ))
-        }
-        
-        self.callback(self.devices.filter({ $0.RSSI != nil }))
+        return nil
     }
     
     // MARK: - HIDDevices (connected ble peripherals to the mac: keyboard, mouse etc...)
@@ -215,6 +307,7 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
             
             let vendorId = d.object(forKey: "VendorID") as? Int
             let productId = d.object(forKey: "ProductID") as? Int
+            address = address.replacingOccurrences(of: ":", with: "-").lowercased()
             list.append(bleDevice(name: name, address: address, uuid: nil, batteryLevel: [KeyValue_t(key: "battery", value: "\(batteryPercent)")], vendorId: vendorId, productId: productId))
         }
         
@@ -273,7 +366,25 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
     // MARK: - system_profiler
     
     private func profilerDevices() -> ([bleDevice], [String]) {
-        guard let res = process(path: "/usr/sbin/system_profiler", arguments: ["SPBluetoothDataType", "-json"]) else {
+        if let cache = self.stateQueue.sync(execute: { self.profilerCache }), Date().timeIntervalSince(cache.ts) < self.profilerTTL {
+            return cache.value
+        }
+        let value = self.fetchProfilerDevices()
+        self.stateQueue.sync { self.profilerCache = (Date(), value) }
+        return value
+    }
+    
+    private func pmsetAccessoryLevels() -> [bleDevice] {
+        if let cache = self.stateQueue.sync(execute: { self.pmsetCache }), Date().timeIntervalSince(cache.ts) < self.pmsetTTL {
+            return cache.value
+        }
+        let value = self.fetchPmsetAccessoryLevels()
+        self.stateQueue.sync { self.pmsetCache = (Date(), value) }
+        return value
+    }
+    
+    private func fetchProfilerDevices() -> ([bleDevice], [String]) {
+        guard let res = process(path: "/usr/sbin/system_profiler", arguments: ["SPBluetoothDataType", "-json"], timeout: 10) else {
             return ([], [])
         }
         
@@ -324,15 +435,17 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
     // MARK: - CBCentralManager
     
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state == .poweredOff {
+        if central.state == .poweredOn && self.active {
+            self.startScan(central)
+        } else if central.isScanning {
             central.stopScan()
-        } else if central.state == .poweredOn {
-            central.scanForPeripherals(withServices: nil, options: nil)
         }
     }
     
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        self.devicesToRemove.append(peripheral.identifier)
+        self.stateQueue.sync {
+            self.devicesToRemove.append(peripheral.identifier)
+        }
     }
     
     // MARK: - CBPeripheral
@@ -364,7 +477,9 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
             return
         }
         
-        self.characteristicsDict[peripheral.identifier] = batteryCharacteristics
+        self.stateQueue.sync {
+            self.characteristicsDict[peripheral.identifier] = batteryCharacteristics
+        }
         peripheral.readValue(for: batteryCharacteristics)
     }
     
@@ -375,13 +490,15 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
         }
         
         if let batteryLevel = characteristic.value?.first {
-            self.bleLevels[peripheral.identifier] = KeyValue_t(key: "battery", value: "\(batteryLevel)")
+            self.stateQueue.sync {
+                self.bleLevels[peripheral.identifier] = KeyValue_t(key: "battery", value: "\(batteryLevel)")
+            }
         }
     }
     
     // MARK: - PMSET data
-    private func pmsetAccessoryLevels() -> [bleDevice] {
-        guard let res = process(path: "/usr/bin/pmset", arguments: ["-g", "accps", "-xml"]) else { return [] }
+    private func fetchPmsetAccessoryLevels() -> [bleDevice] {
+        guard let res = process(path: "/usr/bin/pmset", arguments: ["-g", "accps", "-xml"], timeout: 10) else { return [] }
         
         let plists = res.components(separatedBy: "<?xml")
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

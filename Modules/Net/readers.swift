@@ -13,6 +13,7 @@ import Cocoa
 import Kit
 import SystemConfiguration
 import CoreWLAN
+import CoreLocation
 
 // swiftlint:disable control_statement
 extension CWPHYMode: @retroactive CustomStringConvertible {
@@ -98,7 +99,7 @@ extension CWChannel {
     }
 }
 
-internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
+internal class UsageReader: Reader<Network_Usage>, CWEventDelegate, CLLocationManagerDelegate {
     private var reachability: Reachability = Reachability(start: true)
     private let variablesQueue = DispatchQueue(label: "eu.exelban.NetworkUsageReader")
     private var _usage: Network_Usage = Network_Usage()
@@ -107,18 +108,60 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         set { self.variablesQueue.sync { self._usage = newValue } }
     }
     
+    private let virtualInterfacePrefixes = ["utun", "ipsec", "ppp", "tun", "tap", "gif", "stf", "wg"]
+    
     private var primaryInterface: String {
         get {
-            if let global = SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString), let name = global["PrimaryInterface"] as? String {
-                return name
+            guard let global = SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString), let name = global["PrimaryInterface"] as? String else {
+                return ""
             }
-            return ""
+            if self.isVirtualInterface(name), let physical = self.physicalInterface() {
+                return physical
+            }
+            return name
         }
     }
     
     private var interfaceID: String {
         get { Store.shared.string(key: "Network_interface", defaultValue: self.primaryInterface) }
         set { Store.shared.set(key: "Network_interface", value: newValue) }
+    }
+    private var lastInterfaceID: String = ""
+    
+    private func isVirtualInterface(_ name: String) -> Bool {
+        return self.virtualInterfacePrefixes.contains(where: { name.hasPrefix($0) })
+    }
+    
+    private func physicalInterface() -> String? {
+        if let setup = SCDynamicStoreCopyValue(nil, "Setup:/Network/Global/IPv4" as CFString), let order = setup["ServiceOrder"] as? [String] {
+            for serviceID in order {
+                guard let service = SCDynamicStoreCopyValue(nil, "State:/Network/Service/\(serviceID)/IPv4" as CFString) as? [String: Any],
+                      service["Router"] != nil, let name = service["InterfaceName"] as? String, !self.isVirtualInterface(name) else {
+                    continue
+                }
+                return name
+            }
+        }
+        
+        var interfaceAddresses: UnsafeMutablePointer<ifaddrs>? = nil
+        guard getifaddrs(&interfaceAddresses) == 0 else { return nil }
+        defer { freeifaddrs(interfaceAddresses) }
+        
+        var pointer = interfaceAddresses
+        while let current = pointer {
+            defer { pointer = current.pointee.ifa_next }
+            let flags = Int32(current.pointee.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0, flags & IFF_LOOPBACK == 0, flags & IFF_POINTOPOINT == 0,
+                  let addr = current.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else {
+                continue
+            }
+            let name = String(cString: current.pointee.ifa_name)
+            if !self.isVirtualInterface(name) {
+                return name
+            }
+        }
+        
+        return nil
     }
     
     private var reader: String {
@@ -157,6 +200,9 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
     }
     
     private let wifiClient = CWWiFiClient.shared()
+    private var listeningForWifiEvents: Bool = false
+    
+    private var locationManager: CLLocationManager?
     
     private var lastDetailsReadTS: Date = .distantPast
     
@@ -179,7 +225,7 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         self.reachability.unreachable = { [weak self] in
             guard let self else { return }
             if self.active {
-                self.getWiFiDetails()
+                self.resetWiFiDetails()
                 self.usage.reset()
                 self.callback(self.usage)
             }
@@ -202,12 +248,10 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         }
         
         self.checkUsageReset()
-        
-        self.wifiClient.delegate = self
-        self.startListeningForWifiEvents()
     }
     
     public override func terminate() {
+        self.resetWiFiDetails()
         self.reachability.stop()
         self.reachability.reachable = {}
         self.reachability.unreachable = {}
@@ -215,8 +259,37 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         self.wifiClient.delegate = nil
     }
     
+    public override func start() {
+        self.variablesQueue.sync {
+            self._usage.wifiLocationAuthorization = nil
+        }
+        super.start()
+        self.wifiClient.delegate = self
+        self.startListeningForWifiEvents()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.active else { return }
+            self.observeWiFiLocationAuthorization()
+        }
+    }
+    
+    public override func stop() {
+        super.stop()
+        self.resetWiFiDetails()
+        self.stopListeningForWifiEvents()
+        self.wifiClient.delegate = nil
+    }
+    
     public override func read() {
         self.checkUsageReset()
+        
+        let interfaceID = self.interfaceID
+        if interfaceID != self.lastInterfaceID {
+            self.lastInterfaceID = interfaceID
+            self.resetWiFiDetails()
+            self.usage.bandwidth = Bandwidth()
+            self.lastDetailsReadTS = .distantPast
+        }
+        
         self.requestDetails()
         
         let current: Bandwidth
@@ -241,10 +314,10 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         // drop one-shot counter jumps (e.g. on reconnect) that exceed what the link can physically deliver
         let interval = self.interval ?? 1
         let maxDelta: Int64 = {
-            if let rate = self.usage.interface?.transmitRate, rate > 0, rate < Double(UInt32.max) / 1_000_000 {
+            if let rate = self.usage.interface?.transmitRate, rate > 0 {
                 return Int64(rate * 1_000_000 / 8 * 1.5 * interval) // 50% headroom over negotiated link rate
             }
-            return Int64(12_500_000_000 * interval) // 100 Gbps fallback when link rate is unknown or saturated at the 32-bit ifi_baudrate limit
+            return Int64(12_500_000_000 * interval) // 100 Gbps fallback when link rate is unknown
         }()
         if self.usage.bandwidth.upload > maxDelta { self.usage.bandwidth.upload = 0 }
         if self.usage.bandwidth.download > maxDelta { self.usage.bandwidth.download = 0 }
@@ -304,20 +377,57 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
     }
     
     private func updateInterfaceInfo(_ pointer: UnsafeMutablePointer<ifaddrs>) {
-        self.usage.interface?.status = (pointer.pointee.ifa_flags & UInt32(IFF_UP)) != 0
+        let interfaceID = String(cString: pointer.pointee.ifa_name)
+        let status = (pointer.pointee.ifa_flags & UInt32(IFF_UP)) != 0
+        var transmitRate: Double? = nil
         
-        if let wifiInterface = CWWiFiClient.shared().interface(withName: self.interfaceID) {
-            self.usage.interface?.transmitRate = wifiInterface.transmitRate()
-        } else if let raw = pointer.pointee.ifa_data {
-            let dataPtr = raw.assumingMemoryBound(to: if_data.self)
-            let ifData = dataPtr.pointee
-            let baud = UInt64(ifData.ifi_baudrate)
-            if baud > 0 {
-                self.usage.interface?.transmitRate = Double(baud) / 1_000_000.0
+        if let wifiInterface = CWWiFiClient.shared().interface(withName: interfaceID) {
+            transmitRate = wifiInterface.transmitRate()
+        } else if let address = pointer.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_LINK) {
+            transmitRate = 0
+            if let raw = pointer.pointee.ifa_data {
+                let dataPtr = raw.assumingMemoryBound(to: if_data.self)
+                let ifData = dataPtr.pointee
+                let baud = UInt64(ifData.ifi_baudrate)
+                if baud > 0 && baud < UInt32.max {
+                    transmitRate = Double(baud) / 1_000_000.0
+                }
+            }
+            if transmitRate == 0 {
+                transmitRate = self.readEthernetTransmitRate(interfaceID) ?? 0
+            }
+        }
+        
+        self.variablesQueue.sync {
+            guard self._usage.interface?.BSDName == interfaceID else { return }
+            self._usage.interface?.status = status
+            if let transmitRate {
+                self._usage.interface?.transmitRate = transmitRate
             }
         }
         
         self.getLocalIP(pointer)
+    }
+    
+    private func readEthernetTransmitRate(_ interfaceID: String) -> Double? {
+        for interface in SCNetworkInterfaceCopyAll() as NSArray {
+            let interface = interface as! SCNetworkInterface
+            guard let name = SCNetworkInterfaceGetBSDName(interface), name as String == interfaceID,
+                  SCNetworkInterfaceGetInterfaceType(interface) == kSCNetworkInterfaceTypeEthernet else {
+                continue
+            }
+            
+            var active: Unmanaged<CFDictionary>?
+            guard SCNetworkInterfaceCopyMediaOptions(interface, nil, &active, nil, false),
+                  let media = active?.takeRetainedValue() as? [String: Any],
+                  let subType = media[kSCPropNetEthernetMediaSubType as String] as? String else {
+                return nil
+            }
+            
+            return ethernetTransmitRate(from: subType)
+        }
+        
+        return nil
     }
     
     private func readProcessBandwidth() -> Bandwidth {
@@ -374,12 +484,21 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         let now = Date()
         if now.timeIntervalSince(self.lastDetailsReadTS) < 15 { return }
         
+        let interfaceID = self.interfaceID
+        var found = false
         for interface in SCNetworkInterfaceCopyAll() as NSArray {
-            if let bsdName = SCNetworkInterfaceGetBSDName(interface as! SCNetworkInterface), bsdName as String == self.interfaceID,
+            if let bsdName = SCNetworkInterfaceGetBSDName(interface as! SCNetworkInterface), bsdName as String == interfaceID,
                let type = SCNetworkInterfaceGetInterfaceType(interface as! SCNetworkInterface),
                let displayName = SCNetworkInterfaceGetLocalizedDisplayName(interface as! SCNetworkInterface),
                let address = SCNetworkInterfaceGetHardwareAddressString(interface as! SCNetworkInterface) {
-                self.usage.interface = Network_interface(displayName: displayName as String, BSDName: bsdName as String, address: address as String)
+                self.variablesQueue.sync {
+                    if self._usage.interface?.BSDName != interfaceID {
+                        self._usage.interface = Network_interface(BSDName: interfaceID)
+                    }
+                    self._usage.interface?.displayName = displayName as String
+                    self._usage.interface?.address = address as String
+                }
+                found = true
                 
                 switch type {
                 case kSCNetworkInterfaceTypeEthernet:
@@ -396,7 +515,7 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         
         if let prefs = SCPreferencesCreate(nil, "Stats" as CFString, nil), let services = SCNetworkServiceCopyAll(prefs) as? [SCNetworkService] {
             for service in services {
-                if let interface = SCNetworkServiceGetInterface(service), let name = SCNetworkInterfaceGetBSDName(interface), name as String == self.interfaceID,
+                if let interface = SCNetworkServiceGetInterface(service), let name = SCNetworkInterfaceGetBSDName(interface), name as String == interfaceID,
                    let serviceID = SCNetworkServiceGetServiceID(service) {
                     let key = "State:/Network/Service/\(serviceID)/DNS" as CFString
                     if let settings = SCDynamicStoreCopyValue(nil, key) as? [String: Any] {
@@ -406,13 +525,19 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
             }
         }
         
-        guard self.usage.interface != nil else { return }
+        guard found else {
+            self.usage.interface = nil
+            self.usage.connectionType = nil
+            self.usage.wifiDetails.reset()
+            self.lastDetailsReadTS = Date()
+            return
+        }
         
         if self.usage.connectionType != .wifi {
             self.usage.wifiDetails.reset()
         }
         
-        if self.usage.wifiDetails.ssid != nil && (self.usage.wifiDetails.ssid == "" || self.usage.wifiDetails.ssid == "<redacted>") {
+        if !isUsableSSID(self.usage.wifiDetails.ssid) {
             self.usage.wifiDetails.ssid = nil
         }
         
@@ -424,17 +549,23 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
     }
     
     private func getWiFiDetails() {
-        if let interface = CWWiFiClient.shared().interface(withName: self.interfaceID) {
-            if let ssid = interface.ssid() {
-                self.usage.wifiDetails.ssid = ssid
-            } else if let cfg = interface.configuration(),
-                      let set = (cfg.value(forKey: "networkProfiles") as? NSOrderedSet),
-                      let first = set.firstObject as? CWNetworkProfile,
-                      let raw = first.ssid, !raw.isEmpty {
-                self.usage.wifiDetails.ssid = raw.replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: "‘", with: "'").trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            if let bssid = interface.bssid() {
-                self.usage.wifiDetails.bssid = bssid
+        guard self.usage.connectionType == .wifi else { return }
+        let interfaceID = self.interfaceID
+        
+        if let interface = CWWiFiClient.shared().interface(withName: interfaceID) {
+            if self.usage.wifiLocationAuthorization == .authorized {
+                if let ssid = interface.ssid(), isUsableSSID(ssid) {
+                    if ssid != self.usage.wifiDetails.ssid {
+                        self.resetWiFiDetails()
+                    }
+                    self.usage.wifiDetails.ssid = ssid
+                }
+                if let bssid = interface.bssid() {
+                    self.usage.wifiDetails.bssid = bssid
+                }
+            } else {
+                self.usage.wifiDetails.ssid = nil
+                self.usage.wifiDetails.bssid = nil
             }
             if let cc = interface.countryCode() {
                 self.usage.wifiDetails.countryCode = cc
@@ -455,47 +586,82 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
                 self.usage.wifiDetails.channelNumber = ch.channelNumber.description
             }
         }
-        
-        if self.usage.wifiDetails.ssid == nil || self.usage.wifiDetails.ssid == "" {
-            guard let res = self.systemProfilerAirport(timeout: 5) else {
-                return
-            }
-            do {
-                if let json = try JSONSerialization.jsonObject(with: Data(res.utf8), options: []) as? [String: Any] {
-                    if let arr = json["SPAirPortDataType"] as? [[String: Any]],
-                       let airport = arr.first(where: { $0["spairport_airport_interfaces"] != nil }),
-                       let interfaces = airport["spairport_airport_interfaces"] as? [[String: Any]],
-                       let interface = interfaces.first(where: { $0["_name"] as? String == self.interfaceID }),
-                       let obj = interface["spairport_current_network_information"] as? [String: Any] {
-                        
-                        self.usage.wifiDetails.ssid = obj["_name"] as? String
-                        self.usage.wifiDetails.countryCode = obj["spairport_network_country_code"] as? String
-                        self.usage.wifiDetails.standard = obj["spairport_network_phymode"] as? String
-                    }
-                }
-            } catch let err as NSError {
-                error("error to parse system_profiler SPAirPortDataType: \(err.localizedDescription)")
-                return
+    }
+    
+    private func observeWiFiLocationAuthorization() {
+        if self.locationManager == nil {
+            let manager = CLLocationManager()
+            self.locationManager = manager
+            manager.delegate = self
+        }
+        if let manager = self.locationManager {
+            self.locationManagerDidChangeAuthorization(manager)
+        }
+    }
+    
+    public func requestWiFiLocationAuthorization() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.active,
+                  self.wifiClient.interfaces()?.contains(where: { $0.interfaceName == self.interfaceID }) == true else { return }
+            self.observeWiFiLocationAuthorization()
+            guard let manager = self.locationManager else { return }
+            switch manager.authorizationStatus {
+            case .notDetermined:
+                manager.requestWhenInUseAuthorization()
+            case .denied, .restricted:
+                self.openWiFiLocationSettings()
+            default:
+                break
             }
         }
     }
     
-    private func systemProfilerAirport(timeout: TimeInterval) -> String? {
-        return process(path: "/usr/sbin/system_profiler", arguments: ["SPAirPortDataType", "-json"], timeout: timeout)
+    private func openWiFiLocationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let authorization: WiFiLocationAuthorization
+        switch manager.authorizationStatus {
+        case .notDetermined: authorization = .notDetermined
+        case .authorizedAlways, .authorizedWhenInUse: authorization = .authorized
+        default: authorization = .denied
+        }
+        self.detailsQueue.async { [weak self] in
+            guard let self, self.active else { return }
+            let changed = self.variablesQueue.sync { () -> Bool in
+                guard self._usage.wifiLocationAuthorization != authorization else { return false }
+                self._usage.wifiLocationAuthorization = authorization
+                return true
+            }
+            guard changed else { return }
+            self.resetWiFiDetails()
+            self.getWiFiDetails()
+            self.callback(self.usage)
+        }
+    }
+    
+    private func resetWiFiDetails() {
+        self.variablesQueue.sync {
+            self._usage.wifiDetails.reset()
+        }
     }
     
     private func getLocalIP(_ pointer: UnsafeMutablePointer<ifaddrs>) {
         guard let ifaAddr = pointer.pointee.ifa_addr else { return }
-        var addr = ifaAddr.pointee
-        guard addr.sa_family == UInt8(AF_INET) || addr.sa_family == UInt8(AF_INET6) else { return}
+        let family = ifaAddr.pointee.sa_family
+        guard family == UInt8(AF_INET) || family == UInt8(AF_INET6) else { return }
         
         var ip = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-        getnameinfo(&addr, socklen_t(addr.sa_len), &ip, socklen_t(ip.count), nil, socklen_t(0), NI_NUMERICHOST)
+        guard getnameinfo(ifaAddr, socklen_t(ifaAddr.pointee.sa_len), &ip, socklen_t(ip.count), nil, socklen_t(0), NI_NUMERICHOST) == 0 else { return }
         
         let ipStr = String(cString: ip)
-        if addr.sa_family == UInt8(AF_INET) && !ipStr.isEmpty {
+        guard !ipStr.isEmpty else { return }
+        if family == UInt8(AF_INET) {
             self.usage.laddr.v4 = ipStr
-        } else if addr.sa_family == UInt8(AF_INET6) && !ipStr.isEmpty {
+        } else {
             self.usage.laddr.v6 = ipStr
         }
     }
@@ -625,23 +791,45 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
     }
     
     private func startListeningForWifiEvents() {
+        guard !self.listeningForWifiEvents else { return }
         do {
             try self.wifiClient.startMonitoringEvent(with: .ssidDidChange)
+            self.listeningForWifiEvents = true
         } catch let err as NSError {
             error("failed to start monitoring Wi-Fi events: \(err.localizedDescription)")
         }
     }
     
     private func stopListeningForWifiEvents() {
+        guard self.listeningForWifiEvents else { return }
         do {
             try self.wifiClient.stopMonitoringEvent(with: .ssidDidChange)
+            self.listeningForWifiEvents = false
         } catch let err as NSError {
             error("failed to stop monitoring Wi-Fi events: \(err.localizedDescription)")
         }
     }
     
     public func ssidDidChangeForWiFiInterface(withName interfaceName: String) {
+        guard interfaceName == self.interfaceID else { return }
+        self.resetWiFiDetails()
         self.getWiFiDetails()
+    }
+    
+    private func isUsableSSID(_ ssid: String?) -> Bool {
+        guard let ssid else { return false }
+        return !ssid.isEmpty && ssid != "<redacted>"
+    }
+    
+    private func ethernetTransmitRate(from mediaSubType: String) -> Double? {
+        let components = mediaSubType.lowercased().components(separatedBy: "base")
+        guard components.count == 2, !components[1].isEmpty else { return nil }
+        
+        let gigabits = components[0].hasSuffix("g")
+        let value = gigabits ? String(components[0].dropLast()) : components[0]
+        guard let rate = Double(value), rate.isFinite, rate > 0 else { return nil }
+        
+        return rate * (gigabits ? 1_000 : 1)
     }
 }
 
@@ -657,6 +845,7 @@ public class ProcessReader: Reader<[Network_Process]> {
     
     public override func setup() {
         self.popup = true
+        self.preview = true
     }
     
     public override func read() {
@@ -818,6 +1007,8 @@ internal class ConnectivityReader: Reader<Network_Connectivity> {
         set { self.variablesQueue.sync { self._isPinging = newValue } }
     }
     
+    private var _isPreparing: Bool = false
+    
     private var _latency: Double? = nil
     private var latency: Double? {
         get { self.variablesQueue.sync { self._latency } }
@@ -870,9 +1061,18 @@ internal class ConnectivityReader: Reader<Network_Connectivity> {
     }
     
     private func prepare() {
+        let shouldPrepare: Bool = self.variablesQueue.sync {
+            if self._isPreparing { return false }
+            self._isPreparing = true
+            return true
+        }
+        guard shouldPrepare else { return }
+        
         DispatchQueue.global(qos: .background).async {
             self.addr = self.resolve()
+            self.closeConn()
             self.openConn()
+            self.variablesQueue.sync { self._isPreparing = false }
             self.read()
         }
     }
@@ -1077,19 +1277,24 @@ internal class ConnectivityReader: Reader<Network_Connectivity> {
         let unmanagedSocketInfo = Unmanaged.passRetained(info)
         self.socketInfo = unmanagedSocketInfo
         var context = CFSocketContext(version: 0, info: unmanagedSocketInfo.toOpaque(), retain: nil, release: nil, copyDescription: nil)
-        self.socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { _, callBackType, _, data, info in
+        guard let socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { _, callBackType, _, data, info in
             guard let info = info, let data = data else { return }
             if (callBackType as CFSocketCallBackType) == CFSocketCallBackType.dataCallBack {
                 let cfdata = Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue()
                 let wrapper = Unmanaged<ConnectivityReaderWrapper>.fromOpaque(info).takeUnretainedValue()
                 wrapper.reader?.socketCallback(data: cfdata as Data)
             }
-        }, &context)
-        let handle = CFSocketGetNative(self.socket)
+        }, &context) else {
+            unmanagedSocketInfo.release()
+            self.socketInfo = nil
+            return
+        }
+        self.socket = socket
+        let handle = CFSocketGetNative(socket)
         var value: Int32 = 1
         let err = setsockopt(handle, SOL_SOCKET, SO_NOSIGPIPE, &value, socklen_t(MemoryLayout.size(ofValue: value)))
         guard err == 0 else { return }
-        self.socketSource = CFSocketCreateRunLoopSource(nil, self.socket, 0)
+        self.socketSource = CFSocketCreateRunLoopSource(nil, socket, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), self.socketSource, .commonModes)
     }
     

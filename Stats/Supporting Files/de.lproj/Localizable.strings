@@ -50,7 +50,6 @@
 "Characters" = "Zeichen";
 "Short" = "Kurz";
 "Long" = "Lang";
-"Statistics" = "Statistiken";
 "Max" = "Max";
 "Min" = "Min";
 "Reset" = "Zurücksetzen";
@@ -58,7 +57,7 @@
 "Left alignment" = "Links";
 "Center alignment" = "Zentriert";
 "Right alignment" = "Rechts";
-"Dashboard" = "Dashboard";
+"Dashboard" = "Übersicht"; // qwen3.8:27b
 "Disabled" = "Deaktiviert";
 "Silent" = "Lautlos";
 "Units" = "Einheiten";
@@ -98,6 +97,8 @@
 "15 sec" = "15 Sek.";
 "30 sec" = "30 Sek.";
 "60 sec" = "60 Sek.";
+"Eject" = "Auswerfen"; // qwen3.8:27b
+"Enable" = "Aktivieren"; // qwen3.8:27b
 
 // Setup
 "Stats Setup" = "Stats einrichten";
@@ -141,11 +142,13 @@
 "Support the application" = "Die App unterstützen";
 "Close application" = "App schließen";
 "Open application settings" = "App-Einstellungen öffnen";
-"Open dashboard" = "Dashboard öffnen";
+"Open dashboard" = "Übersicht öffnen";
 "No notifications available in this module" = "In diesem Modul sind keine Benachrichtigungen verfügbar";
 "Open Calendar" = "Kalender öffnen";
 "Toggle the module" = "Modul umschalten";
+"Preview is unavailable while module is disabled." = "Die Vorschau ist nicht verfügbar, solange das Modul deaktiviert ist.";
 "Open System Stats" = "System Stats öffnen"; // gemma4:31b
+"Close module settings" = "Modul-Einstellungen schließen"; // qwen3.8:27b
 
 // Application settings
 "Check for updates" = "Nach Updates suchen";
@@ -164,10 +167,12 @@
 "Pause the Stats" = "Stats pausieren";
 "Resume the Stats" = "Stats fortsetzen";
 "Combined modules" = "Kombinierte Module";
+"Show icon instead of widgets" = "Symbol statt Widgets anzeigen";
 "Combined details" = "Kombinierte Details";
 "Spacing" = "Abstand";
 "Choose file" = "Datei auswählen";
 "Stress tests" = "Stresstests";
+"Keep the menubar items position" = "Die Position der Menüleisten-Elemente beibehalten"; // qwen3.8:27b
 
 // Dashboard
 "Serial number" = "Seriennummer";
@@ -185,8 +190,12 @@
 // Update
 "The latest version of Stats installed" = "Die neueste Version von Stats ist installiert";
 "Downloading..." = "Wird heruntergeladen …";
+"Installing..." = "Installation läuft..."; // qwen3.8:27b
+"Updating..." = "Wird aktualisiert..."; // qwen3.8:27b
+"Stats will restart automatically" = "Stats wird automatisch neu gestartet"; // qwen3.8:27b
 "Current version: " = "Aktuelle Version:  ";
 "Latest version: " = "Neueste Version:   ";
+"Changelog" = "Änderungsprotokoll"; // qwen3.8:27b
 
 // Widgets
 "Color" = "Farbe";
@@ -227,10 +236,11 @@
 "Transparent when no activity" = "Transparent bei Inaktivität";
 "Constant color" = "Konstant";
 "Custom..." = "Benutzerdefiniert...";
+"Icon widget" = "Symbol-Widget";
+"Animate icon" = "Symbol animieren";
 
 // Module Kit
 "Open module settings" = "Modul-Einstellungen öffnen";
-"Open widget settings" = "Widget-Einstellungen öffnen";
 "Update interval" = "Aktualisierungsintervall";
 "Usage history" = "Nutzungsverlauf";
 "Details" = "Details";
@@ -247,6 +257,8 @@
 "Kill process" = "Prozess beenden";
 "Keyboard shortcut" = "Tastaturkurzbefehl";
 "Listening..." = "Wartet …";
+"Open in browser" = "Im Browser öffnen"; // qwen3.8:27b
+"Open module" = "Modul öffnen"; // qwen3.8:27b
 
 // Modules
 "Number of top processes" = "Anzahl der Top-Prozesse";
@@ -276,17 +288,20 @@
 "CPU usage threshold" = "CPU-Auslastungsschwelle";
 "Efficiency cores" = "Effizienzkerne";
 "Performance cores" = "Leistungskerne";
+"Super cores" = "Superkerne"; // qwen3.8:27b
 "System color" = "Systemfarbe";
 "User color" = "Benutzerfarbe";
 "Idle color" = "Leerlauffarbe";
 "Cluster grouping" = "Cluster-Gruppierung";
 "Efficiency cores color" = "Effizienzkerne-Farbe";
 "Performance cores color" = "Leistungskerne-Farbe";
+"Super cores color" = "Superkerne-Farbe"; // qwen3.8:27b
 "Total load" = "Gesamtlast";
 "System load" = "Systemlast";
 "User load" = "Benutzerlast";
 "Efficiency cores load" = "Effizienzkerne-Last";
 "Performance cores load" = "Leistungskerne-Last";
+"Super cores load" = "Superkern-Auslastung"; // qwen3.8:27b
 "All cores" = "Alle Kerne";
 "Load per core" = "Last pro Kern";
 "Efficiency core" = "Effizienzkern";
@@ -300,10 +315,16 @@
 "Model" = "Modell";
 "Status" = "Status";
 "Utilization" = "Auslastung";
-"Render utilization" = "Render-Auslastung";
+"Renderer utilization" = "Render-Auslastung";
+"Renderer utilization history" = "Render-Auslastungsverlauf"; // qwen3.8:27b
 "Tiler utilization" = "Tiler-Auslastung";
+"Tiler utilization history" = "Tiler-Auslastungsverlauf"; // qwen3.8:27b
 "GPU usage threshold" = "GPU-Auslastungsschwelle";
 "GPU usage is" = "GPU-Auslastung ist %0";
+"ANE utilization" = "ANE-Auslastung"; // qwen3.8:27b
+"ANE utilization history" = "ANE-Auslastungsverlauf"; // qwen3.8:27b
+"FPS history" = "FPS-Verlauf"; // qwen3.8:27b
+"GPU utilization history" = "GPU-Auslastungsverlauf"; // qwen3.8:27b
 
 // RAM
 "Memory usage" = "Speicherauslastung";
@@ -325,6 +346,8 @@
 "Free memory (less than)" = "Freier Speicher (weniger als)";
 "Swap size" = "Swap-Größe";
 "Free RAM is" = "Freier RAM ist %0";
+"Pressure" = "Druck"; // qwen3.8:27b
+"Pressure level" = "Druckpegel"; // qwen3.8:27b
 
 // Disk
 "Show removable disks" = "Wechseldatenträger anzeigen";
@@ -346,9 +369,7 @@
 "Encrypted" = "Verschlüsselt"; // gemma4:31b-it-qat
 "Writable" = "Beschreibbar"; // gemma4:31b-it-qat
 "Drives" = "Laufwerke";
-"SMART data" = "SMART-Daten";
-"ATA SMART data" = "ATA SMART-Daten"; // gemma4:31b
-"Power cycles" = "Ladezyklen"; // gemma4:31b
+"Power cycles" = "Einschaltzyklen"; // gemma4:31b
 "Power on hours" = "Betriebsstunden"; // gemma4:31b
 "Critical warning" = "Kritische Warnung"; // gemma4:31b-it-qat
 "Available spare" = "Verfügbare Reserve"; // gemma4:31b-it-qat
@@ -360,6 +381,12 @@
 "Reliability degraded" = "Zuverlässigkeit beeinträchtigt"; // gemma4:31b-it-qat
 "Read-only mode" = "Schreibgeschützter Modus"; // gemma4:31b-it-qat
 "Backup failed" = "Backup fehlgeschlagen"; // gemma4:31b-it-qat
+"All disks" = "Alle Festplatten"; // qwen3.8:27b
+"Disk details" = "Festplattendetails"; // qwen3.8:27b
+"Main color" = "Hauptfarbe"; // qwen3.8:27b
+"Read / Write history" = "Lese-/Schreibverlauf"; // qwen3.8:27b
+"mounted" = "eingehängt"; // qwen3.8:27b
+"removable" = "wechselbar"; // qwen3.8:27b
 
 // Sensors
 "Celsius" = "Celsius";
@@ -389,6 +416,8 @@
 "Sensor to show" = "Anzuzeigender Sensor";
 
 // Network
+"Allow access to Wi-Fi details" = "Zugriff auf Wi-Fi-Details erlauben";
+"Open Location Settings" = "Ortungseinstellungen öffnen";
 "Uploading" = "Hochladen"; // translategemma:4b
 "Downloading" = "Herunterladen"; // translategemma:4b
 "Public IP" = "Öffentliche IP";
@@ -428,6 +457,13 @@
 "Internet connection lost" = "Internetverbindung unterbrochen";
 "Internet connection established" = "Internetverbindung hergestellt";
 "Show country code instead of emoji" = "Ländercode statt Emoji anzeigen"; // gemma4:31b
+"DNS Server" = "DNS-Server"; // qwen3.8:27b
+"Noise" = "Lärm"; // qwen3.8:27b
+"Signal" = "Signal";
+"Speed" = "Geschwindigkeit"; // qwen3.8:27b
+"Network interface changed" = "Netzwerkschnittstelle geändert"; // qwen3.8:27b
+"WiFi network changed" = "WiFi-Netzwerk geändert"; // qwen3.8:27b
+"This will be visible in the text widget" = "Dies wird im Text-Widget sichtbar sein"; // qwen3.8:27b
 
 // Battery
 "Source" = "Quelle";
@@ -435,7 +471,6 @@
 "Battery Power" = "Batteriebetrieb";
 "Time" = "Zeit";
 "Health" = "Zustand";
-"Amperage" = "Stromstärke";
 "Voltage" = "Spannung";
 "Cycles" = "Ladezyklen";
 "Temperature" = "Temperatur";
@@ -450,8 +485,8 @@
 "High level notification" = "Benachrichtigung bei hohem Ladezustand";
 "Low battery" = "Niedriger Ladezustand";
 "High battery" = "Hoher Ladezustand";
-"Battery remaining" = "%0 % verbleibend";
-"Battery remaining to full charge" = "%0 % bis zur vollständigen Ladung";
+"Battery remaining" = "%0% verbleibend";
+"Battery remaining to full charge" = "%0% bis zur vollständigen Ladung";
 "Percentage" = "Prozent";
 "Percentage and time" = "Prozent und Zeit";
 "Time and percentage" = "Zeit und Prozent";
@@ -465,9 +500,11 @@
 "On battery" = "Im Batteriebetrieb"; // gemma4:31b
 "Plugged in" = "Angeschlossen"; // gemma4:31b
 "Charging" = "Laden"; // gemma4:31b
+"Level" = "Stufe"; // qwen3.8:27b
 
 // Bluetooth
 "No Bluetooth devices are available" = "Keine Bluetooth-Geräte verfügbar";
+"Bluetooth threshold" = "Bluetooth-Schwellenwert"; // qwen3.8:27b
 
 // Clock
 "Time zone" = "Zeitzone";
@@ -514,3 +551,24 @@
 "Pink" = "Rosa";
 "Teal" = "Blaugrün";
 "Indigo" = "Indigo";
+
+// System Stats
+"Authorization" = "Autorisierung"; // qwen3.8:27b
+"Identificator" = "Bezeichner"; // qwen3.8:27b
+"Plan" = "Plan";
+"Monitoring" = "Überwachung"; // qwen3.8:27b
+"Control" = "Steuerung"; // qwen3.8:27b
+"Update" = "Aktualisieren"; // qwen3.8:27b
+"Sign in" = "Anmelden"; // qwen3.8:27b
+"Sign out" = "Abmelden"; // qwen3.8:27b
+"Deregister" = "Deregistrieren"; // qwen3.8:27b
+"Hosts" = "Hosts";
+"Machines" = "Rechner"; // qwen3.8:27b
+"No hosts yet" = "Noch keine Hosts"; // qwen3.8:27b
+"No machines yet" = "Noch keine Rechner"; // qwen3.8:27b
+"Get notified when a device goes offline or hits a threshold" = "Benachrichtigung erhalten, wenn ein Gerät offline geht oder einen Schwellenwert erreicht"; // qwen3.8:27b
+"It is not recommended to enable remote control unless you know what you are doing." = "Es wird nicht empfohlen, die Fernsteuerung zu aktivieren, es sei denn, Sie wissen, was Sie tun."; // qwen3.8:27b
+"Live CPU, RAM, disk and network metrics" = "Live-Metriken für CPU, RAM, Festplatte und Netzwerk"; // qwen3.8:27b
+"Login to System Stats to see your devices" = "Anmelden bei System Stats, um Ihre Geräte anzuzeigen"; // qwen3.8:27b
+"Monitor HTTP, ICMP and custom endpoints" = "Überwache HTTP-, ICMP- und benutzerdefinierte Endpunkte"; // qwen3.8:27b
+"Monitor and control your Macs from anywhere. Sign in to your System Stats account to see all your devices and hosts in one place." = "Überwachen und steuern Sie Ihre Macs von überall. Melden Sie sich bei Ihrem System Stats-Konto an, um alle Ihre Geräte und Hosts an einem Ort zu sehen."; // qwen3.8:27b

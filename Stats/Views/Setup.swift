@@ -196,7 +196,7 @@ private class SetupView_welcome: NSStackView {
         title.toolTip = localizedString("Welcome to Stats")
         title.isSelectable = false
         
-        let icon: NSImageView = NSImageView(image: NSImage(named: NSImage.Name("AppIcon"))!)
+        let icon: NSImageView = NSImageView(image: NSImage(named: NSImage.Name("Stats"))!)
         icon.heightAnchor.constraint(equalToConstant: 120).isActive = true
         
         let message: NSTextField = TextView()
@@ -289,7 +289,7 @@ private class SetupView_preset: NSStackView {
         container.alignment = .leading
         
         let message: NSTextField = TextView(frame: NSRect(x: 0, y: 0, width: setupSize.width - 80, height: 16))
-        message.alignment = .left
+        message.alignment = .natural
         message.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         message.textColor = .secondaryLabelColor
         message.stringValue = localizedString("select_preset_message")
@@ -624,7 +624,7 @@ private class SetupView_end: NSStackView {
         support.spacing = 12
         support.orientation = .horizontal
         
-        let systemStats = SupportButtonView(name: "System Stats", image: "AppIcon", action: {
+        let systemStats = SupportButtonView(name: "System Stats", image: "Stats", action: {
             NSWorkspace.shared.open(URL(string: "https://www.system-stats.com")!)
         })
         let github = SupportButtonView(name: "GitHub Sponsors", image: "github", action: {

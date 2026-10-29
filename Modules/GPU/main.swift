@@ -11,7 +11,6 @@
 
 import Cocoa
 import Kit
-import WidgetKit
 
 public typealias GPU_type = String
 public enum GPU_types: GPU_type {
@@ -114,6 +113,7 @@ public class GPU: Module {
     private let previewView: Preview
     
     private var infoReader: InfoReader? = nil
+    private var processReader: ProcessReader? = nil
     
     private var selectedGPU: String = ""
     
@@ -123,6 +123,10 @@ public class GPU: Module {
     
     private var systemWidgetsUpdatesState: Bool {
         self.userDefaults?.bool(forKey: "systemWidgetsUpdates_state") ?? false
+    }
+    
+    private var textValue: String {
+        Store.shared.string(key: "\(self.name)_textWidgetValue", defaultValue: "$usage - $fps")
     }
     
     public init() {
@@ -145,6 +149,10 @@ public class GPU: Module {
         self.infoReader = InfoReader(.GPU) { [weak self] value in
             self?.infoCallback(value)
         }
+        self.processReader = ProcessReader(.GPU) { [weak self] value in
+            self?.popupView.processCallback(value)
+            self?.previewView.processCallback(value)
+        }
         self.selectedGPU = Store.shared.string(key: "\(self.config.name)_gpu", defaultValue: self.selectedGPU)
         
         self.settingsView.selectedGPUHandler = { [weak self] value in
@@ -157,8 +165,19 @@ public class GPU: Module {
         self.settingsView.callback = { [weak self] in
             self?.infoReader?.read()
         }
+        self.settingsView.callbackWhenUpdateNumberOfProcesses = { [weak self] in
+            guard let self else { return }
+            self.popupView.numberOfProcessesUpdated()
+            self.previewView.numberOfProcessesUpdated()
+            DispatchQueue.global(qos: .background).async { [weak self] in
+                self?.processReader?.read()
+            }
+        }
+        self.settingsView.setTopInterval = { [weak self] value in
+            self?.processReader?.setInterval(value)
+        }
         
-        self.setReaders([self.infoReader])
+        self.setReaders([self.infoReader, self.processReader])
     }
     
     private func infoCallback(_ raw: GPUs?) {
@@ -191,16 +210,34 @@ public class GPU: Module {
                 widget.setValue([
                     ColorValue(utilization, color: NSColor.systemBlue)
                 ])
+            case let widget as TextWidget:
+                var text = "\(self.textValue)"
+                let pairs = TextWidget.parseText(text)
+                pairs.forEach { pair in
+                    var replacement: String? = nil
+                    
+                    switch pair.key {
+                    case "$usage": replacement = "\(Int(utilization*100))%"
+                    case "$render": replacement = "\(Int((selectedGPU.renderUtilization ?? 0)*100))%"
+                    case "$tiler": replacement = "\(Int((selectedGPU.tilerUtilization ?? 0)*100))%"
+                    case "$ane": replacement = "\(Int((selectedGPU.aneUtilization ?? 0)*100))%"
+                    case "$fps": replacement = "\(Int((selectedGPU.fps ?? 0).rounded()))"
+                    case "$temperature": replacement = temperature(selectedGPU.temperature ?? 0)
+                    default: return
+                    }
+                    
+                    if let replacement {
+                        let key = pair.value.isEmpty ? pair.key : "\(pair.key).\(pair.value)"
+                        text = text.replacingOccurrences(of: key, with: replacement)
+                    }
+                }
+                widget.setValue(text)
             default: break
             }
         }
         
         if self.systemWidgetsUpdatesState {
-            if isWidgetActive(self.userDefaults, [GPU_entry.kind, "UnitedWidget"]), let blobData = try? JSONEncoder().encode(selectedGPU) {
-                self.userDefaults?.set(blobData, forKey: "GPU@InfoReader")
-            }
-            WidgetCenter.shared.reloadTimelines(ofKind: GPU_entry.kind)
-            WidgetCenter.shared.reloadTimelines(ofKind: "UnitedWidget")
+            SystemWidgetUpdates.shared.update(selectedGPU, key: "GPU@InfoReader", kinds: [GPU_entry.kind, "UnitedWidget"], defaults: self.userDefaults)
         }
     }
 }

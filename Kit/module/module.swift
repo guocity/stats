@@ -103,6 +103,8 @@ open class Module {
     
     private let log: NextLog
     private var readers: [Reader_p] = []
+    private var popupVisible = false
+    private var settingsVisible = false
     
     private var pauseState: Bool {
         get { Store.shared.bool(key: "pause", defaultValue: false) }
@@ -172,6 +174,7 @@ open class Module {
             notificationsSettings: self.notificationsView,
             extraSettings: self.extraSettingsViews
         )
+        self.window?.setState(self.enabled)
         
         self.popup = PopupWindow(title: self.config.name, module: self.moduleType, view: self.popupView, visibilityCallback: self.popupVisibilityCallback)
     }
@@ -183,10 +186,7 @@ open class Module {
     // load function which call when app start
     public func mount() {
         guard self.enabled else { return }
-        self.readers.forEach { (reader: Reader_p) in
-            reader.initStoreValues(title: self.config.name)
-            reader.start()
-        }
+        self.startReaders()
         self.menuBar.enable()
     }
     
@@ -217,10 +217,7 @@ open class Module {
         self.enabled = true
         Store.shared.set(key: "\(self.config.name)_state", value: true)
         self.userDefaults?.set(true, forKey: "\(self.config.name)_state")
-        self.readers.forEach { (reader: Reader_p) in
-            reader.initStoreValues(title: self.config.name)
-            reader.start()
-        }
+        self.startReaders()
         self.menuBar.enable()
         self.window?.setState(self.enabled)
         debug("Module enabled", log: self.log)
@@ -235,7 +232,11 @@ open class Module {
             Store.shared.set(key: "\(self.config.name)_state", value: false)
             self.userDefaults?.set(false, forKey: "\(self.config.name)_state")
         }
-        self.readers.forEach{ $0.stop() }
+        self.readers.forEach {
+            $0.lock()
+            $0.stop()
+        }
+        self.popupVisible = false
         self.menuBar.disable()
         self.window?.setState(self.enabled)
         self.popup?.setIsVisible(false)
@@ -257,7 +258,8 @@ open class Module {
             if let widget = widgetType.new(
                 module: self.config.name,
                 config: self.config.widgetsConfig,
-                defaultWidget: self.config.defaultWidget
+                defaultWidget: self.config.defaultWidget,
+                icon: self.config.icon
             ) {
                 self.menuBar.append(widget)
             }
@@ -266,31 +268,52 @@ open class Module {
     
     // call when popup appear/disappear
     private func popupVisibilityCallback(_ state: Bool) {
-        self.readers.filter{ $0.popup || $0.sleep }.forEach { (reader: Reader_p) in
-            if state {
-                reader.unlock()
-                reader.start()
-            } else {
-                reader.pause()
-                reader.lock()
-            }
-        }
+        self.popupVisible = state
+        self.updateReaderVisibility()
     }
     
     @objc private func listenForWindowOpen(_ notification: Notification) {
-        guard var state = notification.userInfo?["state"] as? Bool else { return }
-        
-        if state, let name = notification.userInfo?["module"] as? String, self.config.name != name {
-            state = false
-        }
-        
-        self.readers.filter{ $0.preview || $0.sleep }.forEach { (reader: Reader_p) in
-            if state {
+        guard let state = notification.userInfo?["state"] as? Bool else { return }
+        self.settingsVisible = state && (notification.userInfo?["module"] as? String == self.config.name)
+        self.updateReaderVisibility()
+    }
+    
+    private func readerHasVisibleConsumer(_ reader: Reader_p) -> Bool {
+        // Regular readers can enter sleep mode while either view is already open.
+        let shared = reader.sleep || (!reader.popup && !reader.preview)
+        return self.enabled && (
+            (self.popupVisible && (reader.popup || shared)) ||
+            (self.settingsVisible && (reader.preview || shared))
+        )
+    }
+    
+    private func startReaders() {
+        self.readers.forEach { reader in
+            reader.initStoreValues(title: self.config.name)
+            if self.readerHasVisibleConsumer(reader) {
                 reader.unlock()
+            } else {
+                reader.lock()
+            }
+            reader.start()
+        }
+    }
+    
+    private func updateReaderVisibility() {
+        self.readers.forEach { reader in
+            let visible = self.readerHasVisibleConsumer(reader)
+            if visible {
+                reader.unlock()
+            } else {
+                reader.lock()
+            }
+            guard reader.popup || reader.preview || reader.sleep else { return }
+            
+            if visible {
+                reader.initStoreValues(title: self.config.name)
                 reader.start()
             } else {
                 reader.pause()
-                reader.lock()
             }
         }
     }
@@ -304,9 +327,6 @@ open class Module {
             return
         }
         
-        let openedWindows = NSApplication.shared.windows.filter{ $0 is NSPanel }
-        openedWindows.forEach{ $0.setIsVisible(false) }
-        
         var reopen: Bool = false
         if let widget = notification.userInfo?["widget"] as? widget_t {
             reopen = popup.openedBy != nil && popup.openedBy != widget
@@ -314,8 +334,6 @@ open class Module {
         }
         
         if popup.occlusionState.rawValue == 8192 || reopen {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            
             popup.contentView?.invalidateIntrinsicContentSize()
             
             let windowCenter = popup.contentView!.intrinsicContentSize.width / 2
@@ -333,7 +351,8 @@ open class Module {
             }
             
             popup.setFrameOrigin(NSPoint(x: x, y: y))
-            popup.setIsVisible(true)
+            popup.orderFrontRegardless()
+            popup.makeKey()
         } else {
             popup.locked = false
             popup.openedBy = nil

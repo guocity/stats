@@ -16,6 +16,9 @@ import UserNotifications
 import WebKit
 import Metal
 import IOKit.pwr_mgt
+import WidgetKit
+
+public let machHostPort: mach_port_t = mach_host_self()
 
 public struct LaunchAtLogin {
     private static let id = "\(Bundle.main.bundleIdentifier!).LaunchAtLogin"
@@ -178,12 +181,7 @@ public struct Units {
     }
     
     public func getReadableMemory(style: ByteCountFormatter.CountStyle = .file) -> String {
-        let formatter: ByteCountFormatter = ByteCountFormatter()
-        formatter.countStyle = style
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        
-        var value = formatter.string(fromByteCount: Int64(self.bytes))
+        var value = FormatterCache.shared.readableMemory(Int64(self.bytes), style: style)
         if let idx = value.lastIndex(of: ",") {
             value.replaceSubrange(idx...idx, with: ".")
         }
@@ -202,24 +200,19 @@ public struct Units {
     }
     
     private func formatSpeedValue(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.decimalSeparator = "."
-        formatter.usesGroupingSeparator = false
-        formatter.minimumFractionDigits = 0
-        
+        let maximumFractionDigits: Int
         switch value {
         case 0:
-            formatter.maximumFractionDigits = 0
+            maximumFractionDigits = 0
         case ..<10:
-            formatter.maximumFractionDigits = 2
+            maximumFractionDigits = 2
         case ..<100:
-            formatter.maximumFractionDigits = 1
+            maximumFractionDigits = 1
         default:
-            formatter.maximumFractionDigits = 0
+            maximumFractionDigits = 0
         }
         
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+        return FormatterCache.shared.decimal(value, maximumFractionDigits: maximumFractionDigits) ?? String(format: "%.2f", value)
     }
 }
 
@@ -299,7 +292,7 @@ public class ValueField: NSTextField {
         
         self.stringValue = value
         self.textColor = .textColor
-        self.alignment = .right
+        self.alignment = .trailing
         self.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         
         self.cell?.usesSingleLineMode = true
@@ -365,6 +358,16 @@ public class StatusBadgeView: NSStackView {
         self.status = value
         self.labelField.stringValue = self.label
         self.layer?.backgroundColor = self.color
+    }
+}
+
+public var isRTL: Bool {
+    NSApp.userInterfaceLayoutDirection == .rightToLeft
+}
+
+public extension NSTextAlignment {
+    static var trailing: NSTextAlignment {
+        isRTL ? .left : .right
     }
 }
 
@@ -446,10 +449,10 @@ public func popupBadgeRow(_ view: NSView? = nil, title: String, status: Bool? = 
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
     
     let labelWidth = title.widthOfString(usingFont: .systemFont(ofSize: 12, weight: .regular)) + 4
-    let labelView: LabelField = LabelField(frame: NSRect(x: 0, y: (height-16)/2, width: labelWidth, height: 16), title)
+    let labelView: LabelField = LabelField(frame: NSRect(x: isRTL ? width - labelWidth : 0, y: (height-16)/2, width: labelWidth, height: 16), title)
     
-    let badgeView = StatusBadgeView(frame: NSRect(x: rowView.frame.width - 50, y: (height-14)/2, width: 50, height: 14), status, ok: ok, notOk: notOk)
-    badgeView.autoresizingMask = [.minXMargin]
+    let badgeView = StatusBadgeView(frame: NSRect(x: isRTL ? 0 : rowView.frame.width - 50, y: (height-14)/2, width: 50, height: 14), status, ok: ok, notOk: notOk)
+    badgeView.autoresizingMask = isRTL ? [.maxXMargin] : [.minXMargin]
     
     rowView.addSubview(labelView)
     rowView.addSubview(badgeView)
@@ -472,8 +475,8 @@ public func popupRow(_ view: NSView? = nil, title: String, value: String, multil
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
     
     let labelWidth = title.widthOfString(usingFont: .systemFont(ofSize: 12, weight: .regular)) + 4
-    let labelView: LabelField = LabelField(frame: NSRect(x: 0, y: ((22-16)/2) + ((lines-1)*16), width: labelWidth, height: 16), title)
-    let valueView: ValueField = ValueField(frame: NSRect(x: labelWidth, y: (22-16)/2, width: rowView.frame.width - labelWidth, height: multiline ? 16*lines : 16), value)
+    let labelView: LabelField = LabelField(frame: NSRect(x: isRTL ? width - labelWidth : 0, y: ((22-16)/2) + ((lines-1)*16), width: labelWidth, height: 16), title)
+    let valueView: ValueField = ValueField(frame: NSRect(x: isRTL ? 0 : labelWidth, y: (22-16)/2, width: rowView.frame.width - labelWidth, height: multiline ? 16*lines : 16), value)
     
     if multiline {
         valueView.cell?.usesSingleLineMode = false
@@ -519,10 +522,11 @@ public func portalRow(_ v: NSStackView, title: String, value: String = "", isSel
 public func popupWithColorRow(_ view: NSView, color: NSColor, title: String, value: String) -> (ColorBlock, LabelField, ValueField) {
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: view.frame.width, height: 22))
     
-    let colorView: ColorBlock = ColorBlock(frame: NSRect(x: 3, y: 6, width: 10, height: 10), color: color)
+    let width = rowView.frame.width
+    let colorView: ColorBlock = ColorBlock(frame: NSRect(x: isRTL ? width - 13 : 3, y: 6, width: 10, height: 10), color: color)
     let labelWidth = min(180, title.widthOfString(usingFont: .systemFont(ofSize: 13, weight: .regular)) + 5)
-    let labelView: LabelField = LabelField(frame: NSRect(x: 18, y: (22-16)/2, width: labelWidth, height: 16), title)
-    let valueView: ValueField = ValueField(frame: NSRect(x: 18 + labelWidth, y: (22-16)/2, width: rowView.frame.width - labelWidth - 18, height: 16), value)
+    let labelView: LabelField = LabelField(frame: NSRect(x: isRTL ? width - 18 - labelWidth : 18, y: (22-16)/2, width: labelWidth, height: 16), title)
+    let valueView: ValueField = ValueField(frame: NSRect(x: isRTL ? 0 : 18 + labelWidth, y: (22-16)/2, width: width - labelWidth - 18, height: 16), value)
     
     rowView.addSubview(colorView)
     rowView.addSubview(labelView)
@@ -664,9 +668,12 @@ public func isNewestVersion(currentVersion: String, latestVersion: String) -> Bo
     
     let currentArray = currentNumber.condenseWhitespace().split(separator: ".")
     let latestArray = latestNumber.condenseWhitespace().split(separator: ".")
+    let component: ([Substring], Int) -> Int = { arr, i in
+        arr.indices.contains(i) ? Int(arr[i]) ?? 0 : 0
+    }
     
-    var current = Version(major: Int(currentArray[0]) ?? 0, minor: Int(currentArray[1]) ?? 0, patch: Int(currentArray[2]) ?? 0)
-    var latest = Version(major: Int(latestArray[0]) ?? 0, minor: Int(latestArray[1]) ?? 0, patch: Int(latestArray[2]) ?? 0)
+    var current = Version(major: component(currentArray, 0), minor: component(currentArray, 1), patch: component(currentArray, 2))
+    var latest = Version(major: component(latestArray, 0), minor: component(latestArray, 1), patch: component(latestArray, 2))
     
     if let patch = currentArray.last, patch.contains("-") {
         let arr = patch.split(separator: "-")
@@ -775,12 +782,7 @@ public struct TopProcess: Codable, Process_p {
     public var name: String
     public var usage: Double
     public var icon: NSImage {
-        get {
-            if let app = NSRunningApplication(processIdentifier: pid_t(self.pid)), let icon = app.icon {
-                return icon
-            }
-            return Constants.defaultProcessIcon
-        }
+        get { ProcessIconCache.shared.icon(for: self.pid) }
     }
     
     public init(pid: Int, name: String, usage: Double) {
@@ -908,10 +910,26 @@ public func localizedString(_ key: String, _ params: String..., comment: String 
 }
 
 public extension UnitTemperature {
+    private static let systemLock = NSLock()
+    private static var systemCache: UnitTemperature? = nil
+    private static let localeObserver: NSObjectProtocol = NotificationCenter.default.addObserver(forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: nil) { _ in
+        UnitTemperature.systemLock.lock()
+        UnitTemperature.systemCache = nil
+        UnitTemperature.systemLock.unlock()
+    }
+    
     static var system: UnitTemperature {
+        _ = self.localeObserver
+        self.systemLock.lock()
+        defer { self.systemLock.unlock() }
+        if let cached = self.systemCache {
+            return cached
+        }
         let measureFormatter = MeasurementFormatter()
         let measurement = Measurement(value: 0, unit: UnitTemperature.celsius)
-        return measureFormatter.string(from: measurement).hasSuffix("C") ? .celsius : .fahrenheit
+        let unit: UnitTemperature = measureFormatter.string(from: measurement).hasSuffix("C") ? .celsius : .fahrenheit
+        self.systemCache = unit
+        return unit
     }
     
     static var current: UnitTemperature {
@@ -927,18 +945,10 @@ public extension UnitTemperature {
 }
 
 public func temperature(_ value: Double, defaultUnit: UnitTemperature = UnitTemperature.celsius, fractionDigits: Int = 0) -> String {
-    let formatter = MeasurementFormatter()
-    formatter.locale = Locale.init(identifier: "en_US")
-    formatter.numberFormatter.maximumFractionDigits = fractionDigits
-    if fractionDigits != 0 {
-        formatter.numberFormatter.minimumFractionDigits = fractionDigits
-    }
-    formatter.unitOptions = .providedUnit
-    
     var measurement = Measurement(value: value, unit: defaultUnit)
     measurement.convert(to: UnitTemperature.current)
     
-    return formatter.string(from: measurement)
+    return FormatterCache.shared.temperature(measurement, fractionDigits: fractionDigits)
 }
 
 public func sysctlByName(_ name: String) -> Int64 {
@@ -1171,25 +1181,43 @@ public class SMCHelper {
     public func checkForUpdate() {
         if #available(macOS 13, *) {
             self.cleanupLegacyInstall()
-            guard SMAppService.daemon(plistName: self.plistName).status == .enabled else { return }
+            let status = SMAppService.daemon(plistName: self.plistName).status
+            guard status == .enabled else {
+                print("SMC helper update check skipped: service status \(status.rawValue) for \(Bundle.main.bundleURL.path)")
+                return
+            }
         }
         
         let helperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchServices/eu.exelban.Stats.SMC.Helper")
         guard let helperBundleInfo = CFBundleCopyInfoDictionaryForURL(helperURL as CFURL) as? [String: Any],
-              let helperVersion = helperBundleInfo["CFBundleShortVersionString"] as? String,
-              let helper = self.helper(nil) else { return }
+              let helperVersion = helperBundleInfo["CFBundleShortVersionString"] as? String else {
+            print("SMC helper update check skipped: cannot read bundled helper version at \(helperURL.path)")
+            return
+        }
+        guard let helper = self.helper(nil) else {
+            print("SMC helper update check skipped: helper proxy unavailable")
+            return
+        }
         
         helper.version { installedHelperVersion in
             guard installedHelperVersion != helperVersion else { return }
             print("new version of SMC helper is detected (\(installedHelperVersion) -> \(helperVersion)), going to update...")
-            self.uninstall(silent: true)
-            self.install { state in
-                if case .enabled = state {
-                    print("the new version of SMC helper was successfully installed")
-                } else {
-                    print("error when installing a new version of the SMC helper")
-                }
+            self.reinstall()
+        }
+    }
+    
+    private func reinstall() {
+        let completion: (SMCHelperInstallState) -> Void = { state in
+            if case .enabled = state {
+                print("the new version of SMC helper was successfully installed")
+            } else {
+                print("error when installing a new version of the SMC helper")
             }
+        }
+        
+        self.uninstall(silent: true) { success in
+            guard success else { return }
+            self.install(completion: completion)
         }
     }
     
@@ -1325,6 +1353,7 @@ public class SMCHelper {
         }
         guard let service = helper.remoteObjectProxyWithErrorHandler({ error in
             print(error)
+            completion?(false)
         }) as? HelperProtocol else {
             completion?(false)
             return nil
@@ -1335,42 +1364,102 @@ public class SMCHelper {
         return service
     }
     
-    public func uninstall(silent: Bool = false) {
-        if let count = SMC.shared.getValue("FNum") {
-            for i in 0..<Int(count) {
-                self.setFanMode(i, mode: 0)
+    private func restoreFanModes(completion: @escaping (Bool) -> Void) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.restoreFanModes(completion: completion) }
+            return
+        }
+        guard let count = SMC.shared.getValue("FNum"), count > 0 else {
+            completion(true)
+            return
+        }
+        let ids = Array(0..<Int(count))
+        var pending = Set(ids)
+        var success = true
+        let finish: (Int, Bool) -> Void = { id, restored in
+            DispatchQueue.main.async {
+                // An XPC error and a late reply must count as only one result.
+                guard pending.remove(id) != nil else { return }
+                success = success && restored
+                if pending.isEmpty { completion(success) }
             }
         }
-        if #available(macOS 13, *) {
-            do {
-                try SMAppService.daemon(plistName: self.plistName).unregister()
-            } catch {
-                print("failed to unregister SMC helper daemon: \(error.localizedDescription)")
+        for id in ids {
+            guard let helper = self.helper({ connected in
+                if !connected { finish(id, false) }
+            }) else { continue }
+            helper.setFanMode(id: id, mode: FanMode.automatic.rawValue) { result in
+                finish(id, result != nil)
             }
-            self.connection?.invalidate()
-            self.connection = nil
+        }
+    }
+    
+    public func uninstall(silent: Bool = false, completion: @escaping (Bool) -> Void = { _ in }) {
+        self.restoreFanModes { restored in
+            guard restored else {
+                print("failed to restore fan modes; SMC helper was not removed")
+                completion(false)
+                return
+            }
+            if #available(macOS 13, *) {
+                SMAppService.daemon(plistName: self.plistName).unregister { error in
+                    DispatchQueue.main.async {
+                        if let error {
+                            print("failed to unregister SMC helper daemon: \(error.localizedDescription)")
+                            completion(false)
+                            return
+                        }
+                        self.connection?.invalidate()
+                        self.connection = nil
+                        if !silent {
+                            NotificationCenter.default.post(name: .fanHelperState, object: nil, userInfo: ["state": false])
+                        }
+                        completion(true)
+                    }
+                }
+                return
+            }
+            guard let helper = self.helper(nil) else {
+                completion(false)
+                return
+            }
+            helper.uninstall()
             if !silent {
                 NotificationCenter.default.post(name: .fanHelperState, object: nil, userInfo: ["state": false])
             }
-            return
-        }
-        guard let helper = self.helper(nil) else { return }
-        helper.uninstall()
-        if !silent {
-            NotificationCenter.default.post(name: .fanHelperState, object: nil, userInfo: ["state": false])
+            completion(true)
         }
     }
 }
 
 internal func grayscaleImage(_ image: NSImage) -> NSImage? {
-    guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+    let scale = NSScreen.main?.backingScaleFactor ?? 2
+    guard let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: Int(ceil(image.size.width * scale)),
+        pixelsHigh: Int(ceil(image.size.height * scale)),
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
         return nil
     }
-    let bitmap = NSBitmapImageRep(cgImage: cgImage)
+    bitmap.size = image.size
+    
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    context.cgContext.scaleBy(x: CGFloat(bitmap.pixelsWide) / image.size.width, y: CGFloat(bitmap.pixelsHigh) / image.size.height)
+    image.draw(in: NSRect(origin: .zero, size: image.size))
+    NSGraphicsContext.restoreGraphicsState()
     
     guard let grayscale = bitmap.converting(to: .genericGray, renderingIntent: .default) else {
         return nil
     }
+    grayscale.size = image.size
     let greyImage = NSImage(size: image.size)
     greyImage.addRepresentation(grayscale)
     
@@ -1427,10 +1516,8 @@ public class EmptyView: NSStackView {
 }
 
 internal func saveNSStatusItemPosition(id: String) {
-    let position = Store.shared.int(key: "NSStatusItem Preferred Position \(id)", defaultValue: -1)
-    if position != -1 {
-        Store.shared.set(key: "NSStatusItem Restore Position \(id)", value: position)
-    }
+    guard let position = UserDefaults.standard.object(forKey: "NSStatusItem Preferred Position \(id)") as? NSNumber else { return }
+    Store.shared.set(key: "NSStatusItem Restore Position \(id)", value: position.intValue)
 }
 internal func restoreNSStatusItemPosition(id: String) {
     let prevPosition = Store.shared.int(key: "NSStatusItem Restore Position \(id)", defaultValue: -1)
@@ -1603,6 +1690,7 @@ public class PreferencesSection: NSStackView {
         super.init(frame: .zero)
         
         self.orientation = .vertical
+        self.setHuggingPriority(.required, for: .horizontal)
         self.spacing = 0
         if let id {
             self.identifier = NSUserInterfaceItemIdentifier(id)
@@ -1613,6 +1701,7 @@ public class PreferencesSection: NSStackView {
         }
         
         self.container.orientation = .vertical
+        self.container.setHuggingPriority(.required, for: .horizontal)
         self.container.wantsLayer = true
         self.container.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.025).cgColor
         self.container.layer?.cornerRadius = Constants.Settings.margin
@@ -1822,7 +1911,7 @@ public class PreferencesRow: NSStackView {
 public func restartApp(_ sender: Any, afterDelay seconds: TimeInterval = 0.5) -> Never {
     let task = Process()
     task.launchPath = "/bin/sh"
-    task.arguments = ["-c", "sleep \(seconds); open \"\(Bundle.main.bundlePath)\""]
+    task.arguments = ["-c", "sleep \(seconds); open \"$1\"", "stats-restart", Bundle.main.bundlePath]
     task.launch()
     NSApp.terminate(sender)
     exit(0)
@@ -1912,7 +2001,8 @@ public class StepperInput: NSStackView, NSTextFieldDelegate, PreferencesSwitchWi
                 selected: unit
             )
             self.addArrangedSubview(self.unitsView!)
-            self.widthAnchor.constraint(equalToConstant: 124).isActive = true
+            self.widthAnchor.constraint(greaterThanOrEqualToConstant: 124).isActive = true
+            self.valueView.widthAnchor.constraint(equalToConstant: 50).isActive = true
         }
     }
     
@@ -2011,7 +2101,18 @@ public class HelpHUD: NSPanel {
         if self.contentView as? WKWebView == nil {
             let webView = WKWebView()
             webView.underPageBackgroundColor = .clear
-            webView.loadHTMLString("<html><body style='color: #ffffff;margin: 10px;'>\(self.text)</body></html>", baseURL: nil)
+            let style = """
+            :root { color-scheme: light dark; }
+            body {
+                margin: 10px;
+                font-family: -apple-system, 'Helvetica Neue', sans-serif;
+                color: #000000;
+            }
+            @media (prefers-color-scheme: dark) {
+                body { color: #ffffff; }
+            }
+            """
+            webView.loadHTMLString("<html><head><style>\(style)</style></head><body>\(self.text)</body></html>", baseURL: nil)
             self.contentView = webView
         }
         
@@ -2035,22 +2136,44 @@ public class VerticallyCenteredTextFieldCell: NSTextFieldCell {
     }
 }
 
-public class CPUeStressTest {
+public class CPUStressTest {
     public var isRunning: Bool = false
     
+    private let type: coreType
     private var workers: [DispatchWorkItem] = []
-    private let queue = DispatchQueue.global(qos: .background)
+    private let queue: DispatchQueue
+    private let qos: qos_class_t
     
-    public init() {}
+    public init(type: coreType) {
+        self.type = type
+        switch type {
+        case .efficiency:
+            self.queue = DispatchQueue.global(qos: .background)
+            self.qos = QOS_CLASS_BACKGROUND
+        case .performance where (SystemKit.shared.device.info.cpu?.sCores ?? 0) > 0:
+            self.queue = DispatchQueue.global(qos: .utility)
+            self.qos = QOS_CLASS_UTILITY
+        default:
+            self.queue = DispatchQueue.global(qos: .userInteractive)
+            self.qos = QOS_CLASS_USER_INTERACTIVE
+        }
+    }
     
     public func start() {
         guard !self.isRunning else { return }
         self.isRunning = true
         
-        let efficientCoreCount: Int = Int(SystemKit.shared.device.info.cpu?.eCores ?? 2)
+        let cpu = SystemKit.shared.device.info.cpu
+        let count: Int
+        switch self.type {
+        case .efficiency: count = Int(cpu?.eCores ?? 2)
+        case .super: count = Int(cpu?.sCores ?? 0)
+        case .performance: count = Int(cpu?.pCores ?? 4) + Int(cpu?.sCores ?? 0)
+        default: count = Int(cpu?.pCores ?? 4)
+        }
         self.workers.removeAll()
         
-        for _ in 0..<efficientCoreCount {
+        for _ in 0..<count {
             let worker = DispatchWorkItem { [weak self] in
                 self?.test()
             }
@@ -2066,48 +2189,7 @@ public class CPUeStressTest {
     }
     
     private func test() {
-        pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0)
-        var x: Double = 1.0
-        while self.isRunning {
-            x = sin(x) + cos(x)
-            if x > 100000 { x = 1.0 }
-            OSMemoryBarrier()
-        }
-    }
-}
-
-public class CPUpStressTest {
-    public var isRunning = false
-    
-    private var workers: [DispatchWorkItem] = []
-    private let queue = DispatchQueue.global(qos: .userInteractive)
-    
-    public init() {}
-    
-    public func start() {
-        guard !self.isRunning else { return }
-        self.isRunning = true
-        
-        let performanceCoreCount: Int = Int(SystemKit.shared.device.info.cpu?.pCores ?? 4)
-        self.workers.removeAll()
-        
-        for _ in 0..<performanceCoreCount {
-            let worker = DispatchWorkItem { [weak self] in
-                self?.test()
-            }
-            self.workers.append(worker)
-            self.queue.async(execute: worker)
-        }
-    }
-    
-    public func stop() {
-        self.isRunning = false
-        self.workers.forEach { $0.cancel() }
-        self.workers.removeAll()
-    }
-    
-    private func test() {
-        pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)
+        pthread_set_qos_class_self_np(self.qos, 0)
         var x: Double = 1.0
         while self.isRunning {
             x = sin(x) + cos(x)
@@ -2215,15 +2297,86 @@ public class GPUStressTest {
     }
 }
 
-public func isWidgetActive(_ defaults: UserDefaults?, _ widgets: [String]) -> Bool {
-    for name in widgets {
-        guard let lastUpdate = defaults?.double(forKey: name) else { return false }
-        let timeSinceUpdate = Date().timeIntervalSince1970 - lastUpdate
-        if timeSinceUpdate < 60 {
-            return true
+public final class SystemWidgetUpdates {
+    public static let shared = SystemWidgetUpdates()
+    
+    private let queue = DispatchQueue(label: "eu.exelban.Stats.SystemWidgetUpdates", qos: .utility)
+    private let encoder = JSONEncoder()
+    private let interval: TimeInterval
+    private var pending: [String: () -> [String]] = [:]
+    private var configuredKinds: Set<String> = []
+    private var nextConfigurationCheck: TimeInterval = 0
+    private var checkingConfigurations = false
+    
+    init(interval: TimeInterval = 5) {
+        self.interval = interval
+        self.encoder.outputFormatting = .sortedKeys
+    }
+    
+    public func update<T: Encodable>(_ value: T, key: String, kinds: [String], defaults: UserDefaults?) {
+        guard let defaults else { return }
+        self.queue.async {
+            guard defaults.bool(forKey: "systemWidgetsUpdates_state") else { return }
+            self.refreshConfigurations()
+            guard !self.activeKinds(kinds, defaults: defaults).isEmpty else { return }
+            
+            let schedule = self.pending.isEmpty
+            self.pending[key] = {
+                guard defaults.bool(forKey: "systemWidgetsUpdates_state") else { return [] }
+                let activeKinds = self.activeKinds(kinds, defaults: defaults)
+                guard !activeKinds.isEmpty, let data = try? self.encoder.encode(value), data != defaults.data(forKey: key) else { return [] }
+                defaults.set(data, forKey: key)
+                return activeKinds
+            }
+            if schedule {
+                self.queue.asyncAfter(deadline: .now() + self.interval) {
+                    self.flush()
+                }
+            }
         }
     }
-    return false
+    
+    private func activeKinds(_ kinds: [String], defaults: UserDefaults) -> [String] {
+        kinds.filter { self.configuredKinds.contains($0) || SystemWidgetUpdates.isWidgetActive(defaults, [$0]) }
+    }
+    
+    private func refreshConfigurations() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard !self.checkingConfigurations, now >= self.nextConfigurationCheck else { return }
+        self.checkingConfigurations = true
+        self.nextConfigurationCheck = now + 60
+        WidgetCenter.shared.getCurrentConfigurations { result in
+            self.queue.async {
+                self.checkingConfigurations = false
+                if case let .success(configurations) = result {
+                    self.configuredKinds = Set(configurations.map { $0.kind })
+                }
+            }
+        }
+    }
+    
+    private func flush() {
+        let updates = self.pending
+        self.pending.removeAll(keepingCapacity: true)
+        var kinds: Set<String> = []
+        for update in updates.values {
+            kinds.formUnion(update())
+        }
+        for kind in kinds {
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+        }
+    }
+    
+    static func isWidgetActive(_ defaults: UserDefaults?, _ widgets: [String]) -> Bool {
+        for name in widgets {
+            guard let lastUpdate = defaults?.double(forKey: name) else { return false }
+            let timeSinceUpdate = Date().timeIntervalSince1970 - lastUpdate
+            if timeSinceUpdate < 60 {
+                return true
+            }
+        }
+        return false
+    }
 }
 
 public func countryFlag(_ code: String) -> String? {

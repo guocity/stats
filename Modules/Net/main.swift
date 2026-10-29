@@ -12,7 +12,6 @@
 import Cocoa
 import Kit
 import SystemConfiguration
-import WidgetKit
 
 public enum Network_t: String, Codable {
     case wifi
@@ -72,6 +71,10 @@ public struct Bandwidth: Codable {
     var download: Int64 = 0
 }
 
+enum WiFiLocationAuthorization: String, Codable {
+    case notDetermined, denied, authorized
+}
+
 public struct Network_Usage: Codable, RemoteType {
     var bandwidth: Bandwidth = Bandwidth()
     var total: Bandwidth = Bandwidth()
@@ -86,6 +89,7 @@ public struct Network_Usage: Codable, RemoteType {
     var status: Bool = false
     
     var wifiDetails: Network_wifi = Network_wifi()
+    var wifiLocationAuthorization: WiFiLocationAuthorization?
     
     mutating func reset() {
         self.bandwidth = Bandwidth()
@@ -121,12 +125,7 @@ public struct Network_Process: Codable, Process_p {
     public var download: Int
     public var upload: Int
     public var icon: NSImage {
-        get {
-            if let app = NSRunningApplication(processIdentifier: pid_t(self.pid)), let icon = app.icon {
-                return icon
-            }
-            return Constants.defaultProcessIcon
-        }
+        get { ProcessIconCache.shared.icon(for: self.pid) }
     }
     
     public init(pid: Int = 0, name: String = "", time: Date = Date(), download: Int = 0, upload: Int = 0) {
@@ -191,9 +190,13 @@ public class Network: Module {
         self.usageReader = UsageReader(.network) { [weak self] value in
             self?.usageCallback(value)
         }
+        self.popupView.locationPermissionAction = { [weak self] in
+            self?.usageReader?.requestWiFiLocationAuthorization()
+        }
         self.processReader = ProcessReader(.network) { [weak self] value in
             if let list = value {
                 self?.popupView.processCallback(list)
+                self?.previewView.processCallback(list)
             }
         }
         self.connectivityReader = ConnectivityReader(.network) { [weak self] value in
@@ -203,6 +206,7 @@ public class Network: Module {
         self.settingsView.callbackWhenUpdateNumberOfProcesses = { [weak self] in
             guard let self else { return }
             self.popupView.numberOfProcessesUpdated()
+            self.previewView.numberOfProcessesUpdated()
             DispatchQueue.global(qos: .background).async { [weak self] in
                 self?.processReader?.read()
             }
@@ -345,10 +349,7 @@ public class Network: Module {
         }
         
         if self.systemWidgetsUpdatesState {
-            if isWidgetActive(self.userDefaults, [Network_entry.kind]), let blobData = try? JSONEncoder().encode(raw) {
-                self.userDefaults?.set(blobData, forKey: "Network@UsageReader")
-            }
-            WidgetCenter.shared.reloadTimelines(ofKind: Network_entry.kind)
+            SystemWidgetUpdates.shared.update(raw, key: "Network@UsageReader", kinds: [Network_entry.kind], defaults: self.userDefaults)
         }
     }
     
