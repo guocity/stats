@@ -16,7 +16,7 @@ import CoreAudio
 import Security
 
 public protocol RemoteType {
-    func remote() -> Data?
+    func remote() -> String?
 }
 
 public enum AccountPlan: String, Codable {
@@ -233,8 +233,26 @@ public class SystemStats {
     }
 
     public func send(key: String, value: Any) {
-        guard self.monitoring && self.isAuthorized, let v = value as? RemoteType, let data = v.remote() else { return }
-        self.mqtt.publishMetric(key: key, data: data)
+        guard self.shouldSendMetric(key: key), let v = value as? RemoteType else { return }
+        self.mqtt.publishMetric(key: key, value: v)
+    }
+    
+    public func isMonitoringEnabled(for module: String) -> Bool {
+        Store.shared.bool(key: "\(module)_system_stats", defaultValue: true)
+    }
+    
+    public func setMonitoring(_ enabled: Bool, for module: String) {
+        Store.shared.set(key: "\(module)_system_stats", value: enabled)
+        if !enabled {
+            self.mqtt.discardMetrics(for: module)
+        }
+    }
+    
+    fileprivate func shouldSendMetric(key: String) -> Bool {
+        guard key != "Disk@SMARTReader" else { return false }
+        guard self.monitoring && self.isAuthorized, let module = key.split(separator: "@").first else { return false }
+        guard module != "Sensors" || self.plan == .pro || self.plan == .organization else { return false }
+        return self.isMonitoringEnabled(for: String(module))
     }
     
     @objc private func successLogin() {
@@ -937,39 +955,48 @@ public class RemoteAuth {
 
 final class RemoteMetricBatch {
     private let queue: DispatchQueue
+    private let isEnabled: (String) -> Bool
     private let publish: (Data) -> Void
     private var pending: [String: String] = [:]
     private var flush: DispatchWorkItem?
-
-    init(queue: DispatchQueue, publish: @escaping (Data) -> Void) {
+    init(queue: DispatchQueue, isEnabled: @escaping (String) -> Bool = { _ in true }, publish: @escaping (Data) -> Void) {
         self.queue = queue
+        self.isEnabled = isEnabled
         self.publish = publish
     }
 
     deinit {
         self.flush?.cancel()
     }
-
-    func append(key: String, data: Data) {
-        guard let value = String(data: data, encoding: .utf8) else { return }
-
+    
+    func append(key: String, value: RemoteType) {
+        guard self.isEnabled(key) else { return }
+        guard let value = value.remote() else { return }
+        
         self.pending[key] = value
         guard self.flush == nil else { return }
 
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-
-            let data = try? JSONEncoder().encode(self.pending)
+            
+            let metrics = self.pending.filter { self.isEnabled($0.key) }
             self.pending.removeAll(keepingCapacity: true)
             self.flush = nil
-            if let data {
+            if !metrics.isEmpty, let data = try? JSONEncoder().encode(metrics) {
                 self.publish(data)
             }
         }
         self.flush = work
         self.queue.asyncAfter(deadline: .now() + .milliseconds(500), execute: work)
     }
-
+    
+    func remove(module: String) {
+        self.pending = self.pending.filter { !$0.key.hasPrefix("\(module)@") }
+        if self.pending.isEmpty {
+            self.flush?.cancel()
+            self.flush = nil
+        }
+    }
     func cancel() {
         self.flush?.cancel()
         self.flush = nil
@@ -1011,13 +1038,15 @@ class MQTTManager: NSObject {
     
     private let stateQueue = DispatchQueue(label: "eu.exelban.Stats.Remote.MQTT")
     private static let stateQueueKey = DispatchSpecificKey<Void>()
-
-    private lazy var metrics = RemoteMetricBatch(queue: self.stateQueue) { [weak self] data in
-        guard let self, SystemStats.shared.monitoring && SystemStats.shared.isAuthorized else { return }
-
-        self.publish(topic: "stats/\(SystemStats.shared.id.uuidString)/metrics", data: data)
-    }
-
+    private lazy var metrics = RemoteMetricBatch(
+        queue: self.stateQueue,
+        isEnabled: { SystemStats.shared.shouldSendMetric(key: $0) },
+        publish: { [weak self] data in
+            guard let self, SystemStats.shared.monitoring && SystemStats.shared.isAuthorized else { return }
+            
+            self.publish(topic: "stats/\(SystemStats.shared.id.uuidString)/metrics", data: data)
+        }
+    )
     override init() {
         self.log = NextLog.shared.copy(category: "Remote MQTT")
         
@@ -1187,11 +1216,11 @@ class MQTTManager: NSObject {
         }
     }
     
-    public func publishMetric(key: String, data: Data) {
+    public func publishMetric(key: String, value: RemoteType) {
         self.onStateQueue {
-            guard self.isConnected && SystemStats.shared.monitoring && SystemStats.shared.isAuthorized else { return }
-
-            self.metrics.append(key: key, data: data)
+            guard self.isConnected && SystemStats.shared.shouldSendMetric(key: key) else { return }
+            
+            self.metrics.append(key: key, value: value)
         }
     }
 
@@ -1200,7 +1229,12 @@ class MQTTManager: NSObject {
             self.metrics.cancel()
         }
     }
-
+    
+    public func discardMetrics(for module: String) {
+        self.onStateQueue {
+            self.metrics.remove(module: module)
+        }
+    }
     private func subscribe(to topic: String) {
         guard self.isConnected else { return }
         

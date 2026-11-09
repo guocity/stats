@@ -178,6 +178,18 @@ public struct gpu_s: Codable {
 }
 
 public struct disk_s: Codable {
+    static let startupDiskInfo: [String: Any]? = {
+        guard let output = process(path: "/usr/sbin/diskutil", arguments: ["info", "-plist", "/"]),
+              let data = output.data(using: .utf8) else { return nil }
+        return (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any]
+    }()
+    
+    public static var startupVolumeGroupID: String? {
+        guard let id = self.startupDiskInfo?["APFSVolumeGroupID"] as? String,
+              UUID(uuidString: id) != nil else { return nil }
+        return id
+    }
+    
     public var id: String? = nil
     public var name: String? = nil
     public var size: Int64? = nil
@@ -656,6 +668,15 @@ public class SystemKit {
             }
         }
         
+        if let id = disk_s.startupVolumeGroupID {
+            let startupIDs = [disk_s.startupDiskInfo?["DiskUUID"] as? String, disk_s.startupDiskInfo?["DeviceNode"] as? String].compactMap { $0 }
+            for i in bootableDisks.indices {
+                if let currentID = bootableDisks[i].id, startupIDs.contains(currentID) {
+                    bootableDisks[i].id = id
+                }
+            }
+        }
+        
         return bootableDisks
     }
     
@@ -971,6 +992,7 @@ let deviceDict: [String: model_s] = [
     "Mac15,5": model_s(name: "iMac 24-Inch (M3, 8 CPU/10 GPU)", year: 2023, type: .iMac),
     "Mac16,2": model_s(name: "iMac 24-Inch (M4, 8 CPU/8 GPU)", year: 2024, type: .iMac),
     "Mac16,3": model_s(name: "iMac 24-Inch (M4, 10 CPU/10 GPU)", year: 2024, type: .iMac),
+    "Mac18,2": model_s(name: "iMac 24-Inch (M6)", year: 2026, type: .iMac),
     
     // iMac Pro
     "iMacPro1,1": model_s(name: "iMac Pro", year: 2017, type: .iMacPro),
@@ -1067,6 +1089,7 @@ let deviceDict: [String: model_s] = [
     "Mac15,8": model_s(name: "MacBook Pro 14\" (M3 Max)", year: 2023, type: .macbookPro),
     "Mac15,9": model_s(name: "MacBook Pro 16\" (M3 Max)", year: 2023, type: .macbookPro),
     "Mac15,10": model_s(name: "MacBook Pro 14\" (M3 Max)", year: 2023, type: .macbookPro),
+    "Mac15,11": model_s(name: "MacBook Pro 16\" (M3 Max)", year: 2023, type: .macbookPro),
     "Mac16,1": model_s(name: "MacBook Pro 14\" (M4)", year: 2024, type: .macbookPro),
     "Mac16,5": model_s(name: "MacBook Pro 16\" (M4 Max)", year: 2024, type: .macbookPro),
     "Mac16,6": model_s(name: "MacBook Pro 14\" (M4 Max)", year: 2024, type: .macbookPro),
@@ -1076,7 +1099,12 @@ let deviceDict: [String: model_s] = [
     "Mac17,6": model_s(name: "MacBook Pro 16\" (M5 Max)", year: 2026, type: .macbookPro),
     "Mac17,7": model_s(name: "MacBook Pro 14\" (M5 Max)", year: 2026, type: .macbookPro),
     "Mac17,8": model_s(name: "MacBook Pro 16\" (M5 Pro)", year: 2026, type: .macbookPro),
-    "Mac17,9": model_s(name: "MacBook Pro 14\" (M5 Pro)", year: 2026, type: .macbookPro)
+    "Mac17,9": model_s(name: "MacBook Pro 14\" (M5 Pro)", year: 2026, type: .macbookPro),
+    "Mac17,10": model_s(name: "MacBook Pro 16\" PROLED XDR (M5 Max)", year: 2026, type: .macbookPro),
+    "Mac17,11": model_s(name: "MacBook Pro 14\" PROLED XDR (M5 Max)", year: 2026, type: .macbookPro),
+    "Mac17,12": model_s(name: "MacBook Pro 16\" PROLED XDR (M5 Pro)", year: 2026, type: .macbookPro),
+    "Mac17,13": model_s(name: "MacBook Pro 14\" PROLED XDR (M5 Pro)", year: 2026, type: .macbookPro),
+    "Mac18,1": model_s(name: "MacBook Pro 14\" (M6)", year: 2026, type: .macbookPro)
 ]
 
 let osDict: [String: String] = [

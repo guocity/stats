@@ -92,16 +92,14 @@ public class GPUs: Codable, RemoteType {
         return self.list.filter{ $0.state && $0.utilization != nil }.sorted{ $0.utilization ?? 0 > $1.utilization ?? 0 }
     }
     
-    public func remote() -> Data? {
-        var string = "\(self.list.count),"
-        for (i, v) in self.list.enumerated() {
-            string += v.remote()
-            if i != self.list.count {
-                string += ","
-            }
+    public func remote() -> String? {
+        let list = self.list
+        var string = "\(list.count)"
+        for v in list {
+            string += ",\(v.remote())"
         }
         string += "$"
-        return string.data(using: .utf8)
+        return string
     }
 }
 
@@ -149,10 +147,12 @@ public class GPU: Module {
         self.infoReader = InfoReader(.GPU) { [weak self] value in
             self?.infoCallback(value)
         }
+        #if arch(arm64)
         self.processReader = ProcessReader(.GPU) { [weak self] value in
             self?.popupView.processCallback(value)
             self?.previewView.processCallback(value)
         }
+        #endif
         self.selectedGPU = Store.shared.string(key: "\(self.config.name)_gpu", defaultValue: self.selectedGPU)
         
         self.settingsView.selectedGPUHandler = { [weak self] value in

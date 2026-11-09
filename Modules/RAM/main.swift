@@ -35,9 +35,12 @@ public struct RAM_Usage: Codable, RemoteType {
         get { Double((self.total - self.free) / self.total) }
     }
     
-    public func remote() -> Data? {
-        let string = "\(self.total),\(self.used),\(self.pressure.level),\(self.swap.used)$"
-        return string.data(using: .utf8)
+    public func remote() -> String? {
+        guard let total = Int64(exactly: self.total),
+              let used = Int64(exactly: self.used),
+              let swap = Int64(exactly: self.swap.used) else { return nil }
+        let string = "\(total),\(used),,\(swap)$"
+        return string
     }
 }
 
@@ -50,6 +53,7 @@ public struct Swap: Codable {
 public struct Pressure: Codable {
     let level: Int
     let value: RAMPressure
+    let percentage: Int?
 }
 
 public class RAM: Module {
@@ -226,6 +230,7 @@ public class RAM: Module {
                         switch pair.value {
                         case "level": replacement = "\(value.pressure.level)"
                         case "value": replacement = value.pressure.value.rawValue
+                        case "percentage": replacement = value.pressure.percentage.map { "\($0)%" } ?? "-"
                         default: return
                         }
                     default: return
